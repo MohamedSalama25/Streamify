@@ -1,0 +1,131 @@
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  darkMode: ["class"],
+  content: ["./src/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      borderRadius: {
+        "2xl": "1rem",
+        "3xl": "1.5rem",
+        "4xl": "2rem",
+        lg: "0.5rem",
+        md: "0.375rem",
+        sm: "0.25rem",
+      },
+      colors: {
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        card: "hsl(var(--card))",
+        "card-foreground": "hsl(var(--card-foreground))",
+        popover: "hsl(var(--popover))",
+        "popover-foreground": "hsl(var(--popover-foreground))",
+        muted: "hsl(var(--muted))",
+        "muted-foreground": "hsl(var(--muted-foreground))",
+        accent: "hsl(var(--accent))",
+        "accent-foreground": "hsl(var(--accent-foreground))",
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        primary: "hsl(var(--primary))",
+        "primary-foreground": "hsl(var(--primary-foreground))",
+        "primary-container": "hsl(var(--primary-container))",
+        secondary: "hsl(var(--secondary))",
+        "secondary-foreground": "hsl(var(--secondary-foreground))",
+        tertiary: "hsl(var(--tertiary))",
+        "tertiary-foreground": "hsl(var(--tertiary-foreground))",
+        destructive: "hsl(var(--destructive))",
+        "destructive-foreground": "hsl(var(--destructive-foreground))",
+        surface: {
+          DEFAULT: "hsl(var(--surface))",
+          dim: "hsl(var(--surface-dim))",
+          bright: "hsl(var(--surface-bright))",
+          "container-lowest": "hsl(var(--surface-container-lowest))",
+          "container-low": "hsl(var(--surface-container-low))",
+          container: "hsl(var(--surface-container))",
+          "container-high": "hsl(var(--surface-container-high))",
+          "container-highest": "hsl(var(--surface-container-highest))",
+          variant: "hsl(var(--surface-variant))",
+          tint: "hsl(var(--surface-tint))",
+        },
+        outline: {
+          DEFAULT: "hsl(var(--outline))",
+          variant: "hsl(var(--outline-variant))",
+        },
+        "on-surface": "hsl(var(--on-surface))",
+        "on-surface-variant": "hsl(var(--on-surface-variant))",
+      },
+      boxShadow: {
+        glow: "0 0 0 1px hsl(var(--outline-variant) / 0.2), 0 18px 80px hsl(var(--surface-tint) / 0.08)",
+        "glow-lg": "0 0 64px hsl(var(--surface-tint) / 0.12)",
+        "glow-primary": "0 0 24px hsl(var(--primary) / 0.25)",
+        ambient: "0 0 64px hsl(var(--surface-tint) / 0.06)",
+      },
+      fontFamily: {
+        body: ["var(--font-body)", "Segoe UI", "sans-serif"],
+        display: ["var(--font-display)", "Segoe UI", "sans-serif"],
+        arabic: ["var(--font-arabic)", "Segoe UI", "sans-serif"],
+      },
+      fontSize: {
+        "display-lg": ["3.5rem", { lineHeight: "1.1", letterSpacing: "-0.04em" }],
+        "display-md": ["2.75rem", { lineHeight: "1.1", letterSpacing: "-0.04em" }],
+        "headline-lg": ["2rem", { lineHeight: "1.2", letterSpacing: "-0.02em" }],
+        "headline-md": ["1.75rem", { lineHeight: "1.2", letterSpacing: "-0.02em" }],
+        "title-lg": ["1.375rem", { lineHeight: "1.4", letterSpacing: "-0.01em" }],
+        "title-md": ["1.125rem", { lineHeight: "1.4", letterSpacing: "-0.01em" }],
+        "body-lg": ["1rem", { lineHeight: "1.6" }],
+        "body-md": ["0.875rem", { lineHeight: "1.6" }],
+        "label-lg": ["0.875rem", { lineHeight: "1", letterSpacing: "0.02em" }],
+        "label-md": ["0.75rem", { lineHeight: "1", letterSpacing: "0.1em" }],
+        "label-sm": ["0.6875rem", { lineHeight: "1", letterSpacing: "0.05em" }],
+      },
+      spacing: {
+        "18": "4.5rem",
+        "22": "5.5rem",
+        "26": "6.5rem",
+        "30": "7.5rem",
+      },
+      keyframes: {
+        float: {
+          "0%, 100%": { transform: "translateY(0px)" },
+          "50%": { transform: "translateY(-12px)" },
+        },
+        pulseGlow: {
+          "0%, 100%": { opacity: "0.3" },
+          "50%": { opacity: "0.7" },
+        },
+        fadeInUp: {
+          "0%": { opacity: "0", transform: "translateY(24px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+        slideInRight: {
+          "0%": { opacity: "0", transform: "translateX(24px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
+        },
+        slideInLeft: {
+          "0%": { opacity: "0", transform: "translateX(-24px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
+        },
+      },
+      animation: {
+        float: "float 8s ease-in-out infinite",
+        pulseGlow: "pulseGlow 6s ease-in-out infinite",
+        "fade-in-up": "fadeInUp 0.7s ease-out forwards",
+        shimmer: "shimmer 3s ease-in-out infinite",
+        "slide-in-right": "slideInRight 0.6s ease-out forwards",
+        "slide-in-left": "slideInLeft 0.6s ease-out forwards",
+      },
+      backgroundImage: {
+        "gradient-primary": "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-container)))",
+        "gradient-radial": "radial-gradient(circle at top, hsl(var(--surface-tint) / 0.08), transparent 60%)",
+      },
+    },
+  },
+  plugins: [],
+};
+
+export default config;

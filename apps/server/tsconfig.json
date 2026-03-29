@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "noEmit": true,
+    "lib": ["ES2022"],
+    "typeRoots": ["./node_modules/@types", "../../node_modules/@types"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}
