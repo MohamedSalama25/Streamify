@@ -383,7 +383,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity): UseRoomS
     }
 
     try {
-      const mediaState = mediaManager.toggleCamera();
+      const mediaState = await mediaManager.toggleCamera();
       syncLocalMedia(mediaState);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to toggle camera.");

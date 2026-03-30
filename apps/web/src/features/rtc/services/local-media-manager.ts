@@ -65,6 +65,7 @@ export class LocalMediaManager {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         this.audioTrack = stream.getAudioTracks()[0] ?? this.audioTrack;
         this.cameraTrack = stream.getVideoTracks()[0] ?? this.cameraTrack;
+        this._cameraEnabled = !!this.cameraTrack;
 
         return {
           previewStream: this.getPreviewStream(),
@@ -99,10 +100,12 @@ export class LocalMediaManager {
     return composeStream(audioTrack, videoTrack);
   }
 
+  private _cameraEnabled = false;
+
   getMediaState(): ParticipantMediaState {
     return {
       microphoneEnabled: this.audioTrack?.enabled ?? false,
-      cameraEnabled: this.cameraTrack?.enabled ?? false,
+      cameraEnabled: this._cameraEnabled,
       screenSharing: Boolean(this.screenTrack),
     };
   }
@@ -120,12 +123,25 @@ export class LocalMediaManager {
     return this.getMediaState();
   }
 
-  toggleCamera() {
-    if (!this.cameraTrack) {
-      throw new Error("Camera is unavailable.");
+  async toggleCamera() {
+    if (this._cameraEnabled && this.cameraTrack) {
+      // Turning camera OFF: stop the track entirely so remote peers
+      // receive replaceTrack(null) and stop showing stale frames.
+      this.cameraTrack.stop();
+      this.cameraTrack = null;
+      this._cameraEnabled = false;
+    } else {
+      // Turning camera ON: acquire a fresh track so remote peers
+      // receive replaceTrack(newTrack) and properly render video.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        this.cameraTrack = stream.getVideoTracks()[0] ?? null;
+        this._cameraEnabled = !!this.cameraTrack;
+      } catch {
+        throw new Error("Camera is unavailable.");
+      }
     }
 
-    this.cameraTrack.enabled = !this.cameraTrack.enabled;
     return this.getMediaState();
   }
 

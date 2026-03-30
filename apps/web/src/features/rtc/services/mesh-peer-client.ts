@@ -30,6 +30,7 @@ export class MeshPeerClient {
   private readonly peers = new Map<string, RTCPeerConnection>();
   private readonly remoteStreams = new Map<string, MediaStream>();
   private readonly pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
+  private readonly senderKindMap = new WeakMap<RTCRtpSender, "audio" | "video">();
   private localStream: MediaStream | null;
 
   constructor(private readonly options: MeshPeerClientOptions) {
@@ -200,15 +201,27 @@ export class MeshPeerClient {
     kind: "audio" | "video",
     nextTrack: MediaStreamTrack | null,
   ) {
-    const sender = peer.getSenders().find((candidate) => candidate.track?.kind === kind);
+    // Find sender by active track kind, OR by our own senderKindMap for
+    // senders whose track has been replaced with null.
+    const sender = peer.getSenders().find(
+      (candidate) =>
+        candidate.track?.kind === kind ||
+        (!candidate.track && this.senderKindMap.get(candidate) === kind),
+    );
 
     if (sender) {
+      // Skip if the sender already carries the exact same track reference
+      if (sender.track === nextTrack) {
+        return;
+      }
+      this.senderKindMap.set(sender, kind);
       void sender.replaceTrack(nextTrack);
       return;
     }
 
     if (nextTrack && this.localStream) {
-      peer.addTrack(nextTrack, this.localStream);
+      const newSender = peer.addTrack(nextTrack, this.localStream);
+      this.senderKindMap.set(newSender, kind);
     }
   }
 
