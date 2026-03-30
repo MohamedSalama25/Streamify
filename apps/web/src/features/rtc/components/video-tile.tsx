@@ -34,7 +34,7 @@ export const VideoTile = memo(function VideoTile({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-3xl shadow-lg transition-all duration-500 hover:ring-2 hover:ring-primary/40",
+        "group relative w-full h-full overflow-hidden rounded-3xl shadow-lg transition-all duration-500 hover:ring-2 hover:ring-primary/40",
         isActiveSpeaker
           ? "bg-surface-container-lowest border-2 border-indigo-400/50 ring-4 ring-indigo-400/10"
           : "bg-surface-container-lowest"
