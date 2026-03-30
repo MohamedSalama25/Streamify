@@ -11,26 +11,11 @@ export function TopNav() {
     const { locale, toggleLocale, t } = useI18n();
 
     return (
-        <header className="sticky top-0 z-50 w-full glass-surface border-b border-outline-variant/10">
+        <header className="fixed top-0 z-50 w-full glass-surface border-b border-outline-variant/10">
             <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 lg:px-8">
-                {/* Left — Brand + Nav */}
-                <div className="flex items-center gap-8">
-                    <BrandMark compact />
-                    <nav className="hidden items-center gap-1 md:flex">
-                        {[t.nav.dashboard, t.nav.sessions, t.nav.resources].map((item, i) => (
-                            <button
-                                key={item}
-                                className={cn(
-                                    "rounded-lg px-3 py-1.5 text-body-md font-medium transition-colors",
-                                    i === 0
-                                        ? "text-primary"
-                                        : "text-on-surface-variant hover:text-on-surface"
-                                )}
-                            >
-                                {item}
-                            </button>
-                        ))}
-                    </nav>
+                {/* Left — Brand */}
+                <div className="flex items-center">
+                    <BrandMark />
                 </div>
 
                 {/* Right — Controls */}
@@ -58,13 +43,6 @@ export function TopNav() {
                         )}
                     </button>
 
-                    {/* Guest Badge */}
-                    <div className="hidden items-center gap-2 rounded-full bg-surface-container-high px-3 py-1.5 sm:flex">
-                        <div className="h-6 w-6 rounded-full bg-gradient-to-br from-primary/60 to-primary-container/80" />
-                        <span className="text-label-md font-medium text-on-surface-variant">
-                            {t.nav.guestUser}
-                        </span>
-                    </div>
                 </div>
             </div>
         </header>

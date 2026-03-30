@@ -4,11 +4,20 @@ import { cn } from "@/shared/lib/cn";
 
 interface PageBackgroundProps {
   className?: string;
+  imageUrl?: string;
 }
 
-export function PageBackground({ className }: PageBackgroundProps) {
+export function PageBackground({ className, imageUrl }: PageBackgroundProps) {
   return (
     <div className={cn("pointer-events-none fixed inset-0 overflow-hidden", className)}>
+      {/* Background Image Layer */}
+      {imageUrl && (
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-[0.15] mix-blend-luminosity grayscale"
+          style={{ backgroundImage: `url(${imageUrl})` }}
+        />
+      )}
+
       {/* Primary glow — top left */}
       <div className="absolute -left-[8%] -top-[5%] h-[500px] w-[500px] rounded-full bg-primary/10 blur-[120px] animate-pulseGlow" />
       {/* Secondary glow — top right */}

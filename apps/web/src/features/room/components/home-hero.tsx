@@ -49,13 +49,13 @@ export function HomeHero() {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      <PageBackground />
+      <PageBackground imageUrl="https://lh3.googleusercontent.com/aida-public/AB6AXuCEFX8-PekjQB9w8ytQENtxWp_9Srnq05pKITWI_25PklnewCczrGS4rg7hkk97pyMGwHp2T9zYojrh4nZK2_ItHkMbbdp-EhUOV0MxdR1mouEJJONs1Q4LO-vd3lEnNv9xxEbxxm_xKrgwexspSfU9gXVmHYhcLF1be2kfS4e5qLB_f-ic8YPm9IlYAKYsoMPEiqStPnOh_T6tAjPjyPUMapFujhY0OW0pL-5hGZbD9ViYrqb9ZGrBUPbItNJM-G5q8Ye6v7981zI" />
 
       {/* ── Top Navigation ── */}
       <TopNav />
 
       {/* ── Main Content ── */}
-      <div className="relative z-10 mx-auto max-w-7xl px-4 py-12 lg:px-8 lg:py-20">
+      <div className="relative z-10 mx-auto max-w-7xl px-4 pt-24 pb-12 lg:px-8 lg:pt-32 lg:pb-20">
         <div className="grid gap-12 lg:grid-cols-[1.3fr_0.7fr] lg:gap-16 items-start">
 
           {/* ── Left Column — Hero Content ── */}

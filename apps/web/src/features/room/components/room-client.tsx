@@ -14,8 +14,6 @@ import { RoomProvider, useRoomStore } from "@/features/room/store/room-store";
 import { RoomControls } from "@/features/room/components/room-controls";
 import { RoomHeader } from "@/features/room/components/room-header";
 import { VideoGrid } from "@/features/rtc/components/video-grid";
-import { PinnedStage } from "@/features/screen-share/components/pinned-stage";
-import { useActiveScreenShare } from "@/features/screen-share/hooks/use-active-screen-share";
 import {
   Sheet,
   SheetContent,
@@ -37,12 +35,6 @@ function RoomExperience({ roomId, identity }: { roomId: string; identity: UserId
     useRoomSession(roomId, identity);
 
   const participants = useSortedParticipants(Object.values(state.participants));
-  const activeScreenShare = useActiveScreenShare(participants);
-  const pinnedParticipant =
-    (state.pinnedUserId ? state.participants[state.pinnedUserId] : null) ?? activeScreenShare;
-  const gridParticipants = participants.filter(
-    (participant) => participant.userId !== pinnedParticipant?.userId,
-  );
   const localParticipant = participants.find((participant) => participant.userId === identity.userId);
 
   if (state.status === "preparing" || state.status === "joining") {
@@ -162,19 +154,17 @@ function RoomExperience({ roomId, identity }: { roomId: string; identity: UserId
 
       {/* Main Content Canvas */}
       <main className="flex-1 absolute top-0 right-0 bottom-0 left-0 xl:left-80 pt-16 flex flex-col z-10 overflow-hidden">
-        <div className="flex-1 flex flex-col p-4 md:p-8 relative min-h-0 max-w-full overflow-hidden">
+        <div className="flex-1 flex flex-col p-4 md:p-6 relative min-h-0 max-w-full overflow-hidden">
           {state.mediaError ? (
-            <Card className="border-error/20 bg-error-container/20 flex-shrink-0 mb-6 mx-auto">
+            <Card className="border-error/20 bg-error-container/20 flex-shrink-0 mb-4 mx-auto">
               <CardContent className="p-4 text-sm text-error">{state.mediaError}</CardContent>
             </Card>
           ) : null}
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pb-24 flex flex-col gap-4 min-h-0 min-w-0 pr-2">
-            {pinnedParticipant ? <PinnedStage participant={pinnedParticipant} /> : null}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pb-24 flex flex-col min-h-0 min-w-0">
             <VideoGrid
-              participants={gridParticipants.length > 0 ? gridParticipants : participants}
+              participants={participants}
               onPin={(userId) => dispatch({ type: "ui/set-pinned", payload: userId })}
-              isHorizontal={!!pinnedParticipant}
             />
           </div>
         </div>
