@@ -1,7 +1,7 @@
 "use client";
 
-import { memo } from "react";
-import { LoaderCircle, MicOff, MonitorUp, Pin, VideoOff } from "lucide-react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { LoaderCircle, Maximize, MicOff, Minimize, MonitorUp, Pin, VideoOff } from "lucide-react";
 
 import type { ParticipantViewModel } from "@/features/room/types/room-state";
 import { useMediaStream } from "@/features/rtc/hooks/use-media-stream";
@@ -10,19 +10,27 @@ import { Badge } from "@/features/ui/components/badge";
 import { Button } from "@/features/ui/components/button";
 import { cn } from "@/shared/lib/cn";
 import { getParticipantInitials } from "@/features/participants/utils/participant-display";
+import { FullscreenParticipantsPanel } from "./fullscreen-participants-panel";
 
 interface VideoTileProps {
   participant: ParticipantViewModel;
   isPinned?: boolean;
   onPin?: (userId: string) => void;
+  participants?: ParticipantViewModel[];
+  onSwitchTo?: (userId: string) => void;
 }
 
 export const VideoTile = memo(function VideoTile({
   participant,
   isPinned = false,
   onPin,
+  participants = [],
+  onSwitchTo,
 }: VideoTileProps) {
   const videoRef = useMediaStream(participant.stream);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   const shouldShowVideo =
     Boolean(participant.stream) &&
     (participant.media.cameraEnabled || participant.media.screenSharing);
@@ -31,8 +39,31 @@ export const VideoTile = memo(function VideoTile({
   // Here we assume if they are pinned or it's just a demo prop, we show the "active speaker" border
   const isActiveSpeaker = isPinned; // Using isPinned to simulate active speaker for now
 
+  // Keep state in sync when user exits fullscreen via Escape key
+  useEffect(() => {
+    const handler = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (!containerRef.current) return;
+    try {
+      if (!document.fullscreenElement) {
+        await containerRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Fullscreen not supported or blocked
+    }
+  }, []);
+
   return (
     <div
+      ref={containerRef}
       className={cn(
         "group relative w-full h-full overflow-hidden rounded-3xl shadow-lg transition-all duration-500 hover:ring-2 hover:ring-primary/40",
         isActiveSpeaker
@@ -68,6 +99,15 @@ export const VideoTile = memo(function VideoTile({
       {/* Gradient overlay for text legibility */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none"></div>
 
+      {/* Fullscreen Participants Panel — only visible in fullscreen */}
+      {isFullscreen && participants.length > 0 && (
+        <FullscreenParticipantsPanel
+          participants={participants}
+          currentParticipantId={participant.userId}
+          onSwitchTo={onSwitchTo}
+        />
+      )}
+
       {isActiveSpeaker && (
         <div className="absolute top-4 right-4 bg-indigo-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter">
           Speaking
@@ -84,12 +124,29 @@ export const VideoTile = memo(function VideoTile({
         )}
       </div>
 
-      {/* Mic Off Status (Bottom Right) */}
-      {!participant.media.microphoneEnabled && (
-        <div className="absolute bottom-4 right-4 bg-error-container/80 backdrop-blur-sm p-1.5 rounded-full border border-error/20">
-          <MicOff className="h-4 w-4 text-error" />
-        </div>
-      )}
+      {/* Bottom-right controls: Mic Off + Fullscreen toggle */}
+      <div className="absolute bottom-4 right-4 flex items-center gap-2 z-10">
+        {/* Mic Off Status */}
+        {!participant.media.microphoneEnabled && (
+          <div className="bg-error-container/80 backdrop-blur-sm p-1.5 rounded-full border border-error/20">
+            <MicOff className="h-4 w-4 text-error" />
+          </div>
+        )}
+
+        {/* Fullscreen / Minimize toggle — visible on hover */}
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          className="flex items-center justify-center h-8 w-8 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-white/80 hover:text-white hover:bg-white/20 transition-all duration-200 cursor-pointer opacity-0 group-hover:opacity-100"
+        >
+          {isFullscreen ? (
+            <Minimize className="h-4 w-4" />
+          ) : (
+            <Maximize className="h-4 w-4" />
+          )}
+        </button>
+      </div>
 
       {/* Action icons / Statuses on the right  */}
       <div className="absolute top-4 left-4 flex gap-2">
@@ -109,4 +166,5 @@ export const VideoTile = memo(function VideoTile({
     </div>
   );
 });
+
 

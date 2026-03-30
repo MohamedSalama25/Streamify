@@ -165,6 +165,13 @@ function RoomExperience({ roomId, identity }: { roomId: string; identity: UserId
             <VideoGrid
               participants={participants}
               onPin={(userId) => dispatch({ type: "ui/set-pinned", payload: userId })}
+              onSwitchTo={async (userId) => {
+                // Exit fullscreen first, then pin the selected participant
+                if (document.fullscreenElement) {
+                  await document.exitFullscreen();
+                }
+                dispatch({ type: "ui/set-pinned", payload: userId });
+              }}
             />
           </div>
         </div>

@@ -9,6 +9,7 @@ import { cn } from "@/shared/lib/cn";
 interface VideoGridProps {
   participants: ParticipantViewModel[];
   onPin?: (userId: string) => void;
+  onSwitchTo?: (userId: string) => void;
 }
 
 /**
@@ -26,7 +27,7 @@ interface VideoGridProps {
  * separate large tile in the same grid (it takes the full width,
  * pushing the webcam tiles below).
  */
-export function VideoGrid({ participants, onPin }: VideoGridProps) {
+export function VideoGrid({ participants, onPin, onSwitchTo }: VideoGridProps) {
   // Separate screen-sharing participants
   const { screenSharers, allTiles } = useMemo(() => {
     const sharers = participants.filter((p) => p.media.screenSharing);
@@ -53,7 +54,12 @@ export function VideoGrid({ participants, onPin }: VideoGridProps) {
       {hasScreenShare && (
         <div className="flex flex-col gap-4 w-full">
           {screenSharers.map((sharer) => (
-            <ScreenShareTile key={`screen-${sharer.userId}`} participant={sharer} />
+            <ScreenShareTile
+              key={`screen-${sharer.userId}`}
+              participant={sharer}
+              participants={participants}
+              onSwitchTo={onSwitchTo}
+            />
           ))}
         </div>
       )}
@@ -67,7 +73,12 @@ export function VideoGrid({ participants, onPin }: VideoGridProps) {
       >
         {allTiles.map((participant) => (
           <div key={participant.userId} className="relative w-full h-full min-h-[120px]">
-            <VideoTile participant={participant} onPin={onPin} />
+            <VideoTile
+              participant={participant}
+              onPin={onPin}
+              participants={participants}
+              onSwitchTo={onSwitchTo}
+            />
           </div>
         ))}
       </div>
