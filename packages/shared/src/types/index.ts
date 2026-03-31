@@ -3,7 +3,8 @@ export type RoomErrorCode =
   | "ROOM_NOT_FOUND"
   | "ROOM_FULL"
   | "VALIDATION_ERROR"
-  | "SERVER_ERROR";
+  | "SERVER_ERROR"
+  | "JOIN_REJECTED";
 
 export type RoomStatus = "idle" | "preparing" | "joining" | "connected" | "error";
 export type PeerConnectionState =
@@ -166,6 +167,38 @@ export interface ScreenSharePayload {
   userId: string;
 }
 
+export interface JoinRequestPayload {
+  roomId: string;
+  user: UserIdentity;
+}
+
+export type JoinResponseDecision = "approved" | "rejected";
+
+export interface JoinResponsePayload {
+  roomId: string;
+  targetUserId: string;
+  decision: JoinResponseDecision;
+}
+
+export interface JoinRequestReceivedPayload {
+  roomId: string;
+  user: UserIdentity;
+}
+
+export interface JoinRequestApprovedPayload {
+  roomId: string;
+}
+
+export interface JoinRequestRejectedPayload {
+  roomId: string;
+  message: string;
+}
+
+export interface CancelJoinRequestPayload {
+  roomId: string;
+  userId: string;
+}
+
 export interface IceServerConfig {
   urls: string[];
   username?: string;
@@ -189,6 +222,18 @@ export interface ClientToServerEvents {
     payload: RoomLeavePayload,
     callback?: (response: SocketAck<RoomLeaveResponse>) => void,
   ) => void;
+  "room:join-request": (
+    payload: JoinRequestPayload,
+    callback: (response: SocketAck<{ queued: boolean }>) => void,
+  ) => void;
+  "room:join-request-cancelled": (
+    payload: CancelJoinRequestPayload,
+    callback?: (response: SocketAck<{ ok: boolean }>) => void,
+  ) => void;
+  "room:join-response": (
+    payload: JoinResponsePayload,
+    callback?: (response: SocketAck<{ ok: boolean }>) => void,
+  ) => void;
   "presence:media-state": (payload: PresenceMediaStatePayload) => void;
   "chat:send": (
     payload: ChatSendPayload,
@@ -207,6 +252,10 @@ export interface ServerToClientEvents {
   "room:joined": (payload: RoomJoinedPayload) => void;
   "room:error": (payload: RoomErrorPayload) => void;
   "room:participants": (payload: RoomParticipantsPayload) => void;
+  "room:join-request-received": (payload: JoinRequestReceivedPayload) => void;
+  "room:join-request-approved": (payload: JoinRequestApprovedPayload) => void;
+  "room:join-request-rejected": (payload: JoinRequestRejectedPayload) => void;
+  "room:join-request-cancelled": (payload: CancelJoinRequestPayload) => void;
   "presence:user-joined": (payload: PresenceUserJoinedPayload) => void;
   "presence:user-left": (payload: PresenceUserLeftPayload) => void;
   "presence:media-state": (payload: PresenceMediaStatePayload) => void;

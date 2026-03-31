@@ -11,10 +11,18 @@ export interface RoomParticipantRecord extends RoomParticipant {
   socketId: string;
 }
 
+export interface PendingJoinRequest {
+  userId: string;
+  displayName: string;
+  socketId: string;
+  requestedAt: string;
+}
+
 export interface RoomRecord {
   roomId: string;
   createdAt: string;
   participants: Map<string, RoomParticipantRecord>;
+  pendingJoinRequests: Map<string, PendingJoinRequest>;
 }
 
 export interface JoinRoomParams {

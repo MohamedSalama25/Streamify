@@ -1,6 +1,7 @@
 import type { RoomParticipant } from "@streamify/shared";
 
 import type {
+  PendingJoinRequest,
   RoomParticipantRecord,
   RoomRecord,
   RoomSocketLookup,
@@ -15,6 +16,7 @@ export class InMemoryRoomStore {
       roomId,
       createdAt: new Date().toISOString(),
       participants: new Map(),
+      pendingJoinRequests: new Map(),
     };
 
     this.rooms.set(roomId, room);
@@ -130,5 +132,35 @@ export class InMemoryRoomStore {
 
   getSocketId(roomId: string, userId: string) {
     return this.findParticipant(roomId, userId)?.socketId ?? null;
+  }
+
+  addPendingJoinRequest(roomId: string, request: PendingJoinRequest) {
+    const room = this.getRoom(roomId);
+    if (!room) return null;
+    room.pendingJoinRequests.set(request.userId, request);
+    return request;
+  }
+
+  removePendingJoinRequest(roomId: string, userId: string) {
+    const room = this.getRoom(roomId);
+    if (!room) return null;
+    const req = room.pendingJoinRequests.get(userId) ?? null;
+    room.pendingJoinRequests.delete(userId);
+    return req;
+  }
+
+  getPendingJoinRequest(roomId: string, userId: string) {
+    return this.getRoom(roomId)?.pendingJoinRequests.get(userId) ?? null;
+  }
+
+  findPendingBySocket(socketId: string): { roomId: string; userId: string } | null {
+    for (const [roomId, room] of this.rooms) {
+      for (const [userId, req] of room.pendingJoinRequests) {
+        if (req.socketId === socketId) {
+          return { roomId, userId };
+        }
+      }
+    }
+    return null;
   }
 }

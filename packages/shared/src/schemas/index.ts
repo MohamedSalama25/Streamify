@@ -109,6 +109,22 @@ export const screenSharePayloadSchema = z.object({
   userId: z.string().uuid(),
 });
 
+export const joinRequestPayloadSchema = z.object({
+  roomId: roomIdSchema,
+  user: userIdentitySchema,
+});
+
+export const joinResponsePayloadSchema = z.object({
+  roomId: roomIdSchema,
+  targetUserId: z.string().uuid(),
+  decision: z.enum(["approved", "rejected"]),
+});
+
+export const cancelJoinRequestPayloadSchema = z.object({
+  roomId: roomIdSchema,
+  userId: z.string().uuid(),
+});
+
 export const iceServerConfigSchema = z.object({
   urls: z.array(z.string().min(1)).min(1),
   username: z.string().optional(),

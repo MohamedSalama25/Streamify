@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle, Maximize, MicOff, Minimize, MonitorUp, Pin, VideoOff } from "lucide-react";
 
 import type { ParticipantViewModel } from "@/features/room/types/room-state";
+import type { UserIdentity } from "@streamify/shared";
 import { useMediaStream } from "@/features/rtc/hooks/use-media-stream";
 import { Avatar, AvatarFallback } from "@/features/ui/components/avatar";
 import { Badge } from "@/features/ui/components/badge";
@@ -17,6 +18,10 @@ interface VideoTileProps {
   isPinned?: boolean;
   onPin?: (userId: string) => void;
   participants?: ParticipantViewModel[];
+  joinRequests?: UserIdentity[];
+  onAcceptRequest?: (userId: string) => void;
+  onRejectRequest?: (userId: string) => void;
+  onAcceptAll?: () => void;
   onSwitchTo?: (userId: string) => void;
 }
 
@@ -25,6 +30,10 @@ export const VideoTile = memo(function VideoTile({
   isPinned = false,
   onPin,
   participants = [],
+  joinRequests = [],
+  onAcceptRequest,
+  onRejectRequest,
+  onAcceptAll,
   onSwitchTo,
 }: VideoTileProps) {
   const videoRef = useMediaStream(participant.stream);
@@ -100,10 +109,14 @@ export const VideoTile = memo(function VideoTile({
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none"></div>
 
       {/* Fullscreen Participants Panel — only visible in fullscreen */}
-      {isFullscreen && participants.length > 0 && (
+      {isFullscreen && (participants.length > 0 || joinRequests.length > 0) && (
         <FullscreenParticipantsPanel
           participants={participants}
           currentParticipantId={participant.userId}
+          joinRequests={joinRequests}
+          onAcceptRequest={onAcceptRequest}
+          onRejectRequest={onRejectRequest}
+          onAcceptAll={onAcceptAll}
           onSwitchTo={onSwitchTo}
         />
       )}

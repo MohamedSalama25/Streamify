@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import type { UserIdentity } from "@streamify/shared";
 import { createRoomRequest } from "@/features/room/services/room-socket-service";
+import { markAsCreator } from "@/features/room/utils/room-creator-store";
 import { ROUTES } from "@/shared/constants/routes";
 import { getSocket } from "@/shared/lib/socket";
 
@@ -32,6 +33,9 @@ export function useHomeActions({
       const result = await createRoomRequest(socket, {
         user: identity,
       });
+
+      // Mark this user as the creator of this room
+      markAsCreator(result.roomId);
 
       startTransition(() => {
         router.push(ROUTES.room(result.roomId));

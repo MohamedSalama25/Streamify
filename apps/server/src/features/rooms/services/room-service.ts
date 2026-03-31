@@ -1,4 +1,4 @@
-import type { ParticipantMediaState, RoomParticipant } from "@streamify/shared";
+import type { ParticipantMediaState, RoomParticipant, UserIdentity } from "@streamify/shared";
 import { MAX_ROOM_PARTICIPANTS } from "@streamify/shared";
 
 import type { InMemoryRoomStore } from "../store/in-memory-room-store";
@@ -7,6 +7,7 @@ import {
   type JoinRoomParams,
   type JoinRoomResult,
   type LeaveRoomResult,
+  type PendingJoinRequest,
   type RoomParticipantRecord,
   normalizeRoomError,
   RoomServiceError,
@@ -14,7 +15,7 @@ import {
 import { generateRoomId } from "../utils/generate-room-id";
 
 export class RoomService {
-  constructor(private readonly store: InMemoryRoomStore) {}
+  constructor(private readonly store: InMemoryRoomStore) { }
 
   createRoom() {
     let roomId = generateRoomId();
@@ -25,6 +26,66 @@ export class RoomService {
 
     this.store.createRoom(roomId);
     return roomId;
+  }
+
+  /** Check if a room exists */
+  roomExists(roomId: string) {
+    return this.store.hasRoom(roomId);
+  }
+
+  /** Check if a user is the host of a room */
+  isRoomHost(roomId: string, userId: string) {
+    const participant = this.store.findParticipant(roomId, userId);
+    return participant?.isHost === true;
+  }
+
+  /** Get the host socket ID for a room */
+  getHostSocketId(roomId: string): string | null {
+    const room = this.store.getRoom(roomId);
+    if (!room) return null;
+
+    for (const p of room.participants.values()) {
+      if (p.isHost) return p.socketId;
+    }
+    return null;
+  }
+
+  /** Add a pending join request (waiting room) */
+  addJoinRequest(roomId: string, user: UserIdentity, socketId: string): PendingJoinRequest {
+    const room = this.store.getRoom(roomId);
+    if (!room) {
+      throw new RoomServiceError("ROOM_NOT_FOUND", "That room does not exist.");
+    }
+
+    if (room.participants.size >= MAX_ROOM_PARTICIPANTS) {
+      throw new RoomServiceError(
+        "ROOM_FULL",
+        `This room already has ${MAX_ROOM_PARTICIPANTS} participants.`,
+      );
+    }
+
+    const request: PendingJoinRequest = {
+      userId: user.userId,
+      displayName: user.displayName,
+      socketId,
+      requestedAt: new Date().toISOString(),
+    };
+
+    this.store.addPendingJoinRequest(roomId, request);
+    return request;
+  }
+
+  /** Remove a pending join request */
+  removePendingRequest(roomId: string, userId: string) {
+    return this.store.removePendingJoinRequest(roomId, userId);
+  }
+
+  /** Clean up pending request when socket disconnects */
+  removePendingBySocket(socketId: string) {
+    const lookup = this.store.findPendingBySocket(socketId);
+    if (!lookup) return null;
+    this.store.removePendingJoinRequest(lookup.roomId, lookup.userId);
+    return lookup;
   }
 
   joinRoom({ roomId, user, socketId }: JoinRoomParams): JoinRoomResult {
@@ -51,6 +112,9 @@ export class RoomService {
       media = existingParticipant.media;
       this.store.removeParticipant(roomId, user.userId);
     }
+
+    // Clean up any pending request for this user
+    this.store.removePendingJoinRequest(roomId, user.userId);
 
     const participant = this.store.saveParticipant(roomId, {
       userId: user.userId,

@@ -4,11 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Maximize, Minimize, MonitorUp } from "lucide-react";
 import type { ParticipantViewModel } from "@/features/room/types/room-state";
 import { useMediaStream } from "@/features/rtc/hooks/use-media-stream";
+import type { UserIdentity } from "@streamify/shared";
 import { FullscreenParticipantsPanel } from "./fullscreen-participants-panel";
 
 interface ScreenShareTileProps {
     participant: ParticipantViewModel;
     participants?: ParticipantViewModel[];
+    joinRequests?: UserIdentity[];
+    onAcceptRequest?: (userId: string) => void;
+    onRejectRequest?: (userId: string) => void;
+    onAcceptAll?: () => void;
     onSwitchTo?: (userId: string) => void;
 }
 
@@ -17,7 +22,15 @@ interface ScreenShareTileProps {
  * of a given participant. Styled with Glassmorphic overlays
  * consistent with the Kinetic Void design system.
  */
-export function ScreenShareTile({ participant, participants = [], onSwitchTo }: ScreenShareTileProps) {
+export function ScreenShareTile({
+    participant,
+    participants = [],
+    joinRequests = [],
+    onAcceptRequest,
+    onRejectRequest,
+    onAcceptAll,
+    onSwitchTo
+}: ScreenShareTileProps) {
     const videoRef = useMediaStream(participant.stream);
     const containerRef = useRef<HTMLElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -59,10 +72,14 @@ export function ScreenShareTile({ participant, participants = [], onSwitchTo }: 
             />
 
             {/* Fullscreen Participants Panel — only visible in fullscreen */}
-            {isFullscreen && participants.length > 0 && (
+            {isFullscreen && (participants.length > 0 || joinRequests.length > 0) && (
                 <FullscreenParticipantsPanel
                     participants={participants}
                     currentParticipantId={participant.userId}
+                    joinRequests={joinRequests}
+                    onAcceptRequest={onAcceptRequest}
+                    onRejectRequest={onRejectRequest}
+                    onAcceptAll={onAcceptAll}
                     onSwitchTo={onSwitchTo}
                 />
             )}

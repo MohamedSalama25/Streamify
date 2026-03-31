@@ -2,6 +2,9 @@
 
 import {
   SOCKET_EVENTS,
+  type JoinRequestPayload,
+  type CancelJoinRequestPayload,
+  type JoinResponsePayload,
   type PresenceMediaStatePayload,
   type RoomCreatePayload,
   type RoomCreateResponse,
@@ -95,6 +98,38 @@ export async function leaveRoomRequest(socket: StreamifySocket, payload: RoomLea
       }
     });
   });
+}
+
+export async function sendJoinRequest(socket: StreamifySocket, payload: JoinRequestPayload) {
+  await connectSocket(socket);
+
+  return new Promise<{ queued: boolean }>((resolve, reject) => {
+    socket.emit(SOCKET_EVENTS.ROOM.JOIN_REQUEST, payload, (response) => {
+      try {
+        resolve(resolveAck(response));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+export async function sendCancelJoinRequest(socket: StreamifySocket, payload: CancelJoinRequestPayload) {
+  await connectSocket(socket);
+
+  return new Promise<{ ok: boolean }>((resolve, reject) => {
+    socket.emit(SOCKET_EVENTS.ROOM.JOIN_REQUEST_CANCELLED, payload, (response) => {
+      try {
+        resolve(resolveAck(response));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+export function sendJoinResponse(socket: StreamifySocket, payload: JoinResponsePayload) {
+  socket.emit(SOCKET_EVENTS.ROOM.JOIN_RESPONSE, payload);
 }
 
 export function emitMediaState(socket: StreamifySocket, payload: PresenceMediaStatePayload) {

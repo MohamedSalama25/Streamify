@@ -2,12 +2,17 @@
 
 import { useMemo } from "react";
 import type { ParticipantViewModel } from "@/features/room/types/room-state";
+import type { UserIdentity } from "@streamify/shared";
 import { VideoTile } from "./video-tile";
 import { ScreenShareTile } from "./screen-share-tile";
 import { cn } from "@/shared/lib/cn";
 
 interface VideoGridProps {
   participants: ParticipantViewModel[];
+  joinRequests?: UserIdentity[];
+  onAcceptRequest?: (userId: string) => void;
+  onRejectRequest?: (userId: string) => void;
+  onAcceptAll?: () => void;
   onPin?: (userId: string) => void;
   onSwitchTo?: (userId: string) => void;
 }
@@ -27,7 +32,15 @@ interface VideoGridProps {
  * separate large tile in the same grid (it takes the full width,
  * pushing the webcam tiles below).
  */
-export function VideoGrid({ participants, onPin, onSwitchTo }: VideoGridProps) {
+export function VideoGrid({
+  participants,
+  joinRequests = [],
+  onAcceptRequest,
+  onRejectRequest,
+  onAcceptAll,
+  onPin,
+  onSwitchTo
+}: VideoGridProps) {
   // Separate screen-sharing participants
   const { screenSharers, allTiles } = useMemo(() => {
     const sharers = participants.filter((p) => p.media.screenSharing);
@@ -58,6 +71,10 @@ export function VideoGrid({ participants, onPin, onSwitchTo }: VideoGridProps) {
               key={`screen-${sharer.userId}`}
               participant={sharer}
               participants={participants}
+              joinRequests={joinRequests}
+              onAcceptRequest={onAcceptRequest}
+              onRejectRequest={onRejectRequest}
+              onAcceptAll={onAcceptAll}
               onSwitchTo={onSwitchTo}
             />
           ))}
@@ -77,6 +94,10 @@ export function VideoGrid({ participants, onPin, onSwitchTo }: VideoGridProps) {
               participant={participant}
               onPin={onPin}
               participants={participants}
+              joinRequests={joinRequests}
+              onAcceptRequest={onAcceptRequest}
+              onRejectRequest={onRejectRequest}
+              onAcceptAll={onAcceptAll}
               onSwitchTo={onSwitchTo}
             />
           </div>

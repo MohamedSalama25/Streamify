@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
-import type { UserIdentity } from "@streamify/shared";
+import {
+  SOCKET_EVENTS,
+  type JoinRequestApprovedPayload,
+  type JoinRequestRejectedPayload,
+  type JoinRequestReceivedPayload,
+  type UserIdentity,
+} from "@streamify/shared";
+import { toast } from "sonner";
 
 import { usePersistentIdentity } from "@/features/auth/hooks/use-persistent-identity";
 import { useSortedParticipants } from "@/features/participants/hooks/use-sorted-participants";
@@ -13,6 +20,10 @@ import { useRoomSession } from "@/features/room/hooks/use-room-session";
 import { RoomProvider, useRoomStore } from "@/features/room/store/room-store";
 import { RoomControls } from "@/features/room/components/room-controls";
 import { RoomHeader } from "@/features/room/components/room-header";
+import { GuestJoinLobby } from "@/features/room/components/guest-join-lobby";
+import { WaitingRoom, type WaitingRoomStatus } from "@/features/room/components/waiting-room";
+import { sendJoinRequest, sendJoinResponse } from "@/features/room/services/room-socket-service";
+import { isRoomCreator } from "@/features/room/utils/room-creator-store";
 import { VideoGrid } from "@/features/rtc/components/video-grid";
 import {
   Sheet,
@@ -25,17 +36,84 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/fea
 import { LoadingState } from "@/shared/components/loading-state";
 import { ROUTES } from "@/shared/constants/routes";
 import { cn } from "@/shared/lib/cn";
+import { getSocket, disconnectSocket } from "@/shared/lib/socket";
+
+/* ─────────────────── Room Experience (inside room) ─────────────────── */
 
 function RoomExperience({ roomId, identity }: { roomId: string; identity: UserIdentity }) {
   const { state, dispatch } = useRoomStore();
   const [chatOpen, setChatOpen] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "participants">("chat");
+  const [joinRequests, setJoinRequests] = useState<UserIdentity[]>([]);
   const { copyRoomLink, leaveRoom, sendMessage, toggleCamera, toggleMicrophone, toggleScreenShare } =
     useRoomSession(roomId, identity);
 
   const participants = useSortedParticipants(Object.values(state.participants));
   const localParticipant = participants.find((participant) => participant.userId === identity.userId);
+
+  // Listen for join requests (host only)
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleJoinRequest = (payload: { user: { userId: string; displayName: string } }) => {
+      setJoinRequests((prev) => {
+        // Avoid duplicates
+        if (prev.some((r) => r.userId === payload.user.userId)) return prev;
+        return [...prev, payload.user];
+      });
+      toast.info(`${payload.user.displayName} wants to join the meeting.`);
+    };
+
+    const handleCancelRequest = (payload: { userId: string }) => {
+      setJoinRequests((prev) => prev.filter((r) => r.userId !== payload.userId));
+    };
+
+    socket.on(SOCKET_EVENTS.ROOM.JOIN_REQUEST_RECEIVED, handleJoinRequest);
+    socket.on(SOCKET_EVENTS.ROOM.JOIN_REQUEST_CANCELLED, handleCancelRequest);
+    return () => {
+      socket.off(SOCKET_EVENTS.ROOM.JOIN_REQUEST_RECEIVED, handleJoinRequest);
+      socket.off(SOCKET_EVENTS.ROOM.JOIN_REQUEST_CANCELLED, handleCancelRequest);
+    };
+  }, []);
+
+  const handleAcceptRequest = useCallback(
+    (userId: string) => {
+      const socket = getSocket();
+      sendJoinResponse(socket, {
+        roomId,
+        targetUserId: userId,
+        decision: "approved",
+      });
+      setJoinRequests((prev) => prev.filter((r) => r.userId !== userId));
+    },
+    [roomId],
+  );
+
+  const handleRejectRequest = useCallback(
+    (userId: string) => {
+      const socket = getSocket();
+      sendJoinResponse(socket, {
+        roomId,
+        targetUserId: userId,
+        decision: "rejected",
+      });
+      setJoinRequests((prev) => prev.filter((r) => r.userId !== userId));
+    },
+    [roomId],
+  );
+
+  const handleAcceptAllRequests = useCallback(() => {
+    const socket = getSocket();
+    joinRequests.forEach((req) => {
+      sendJoinResponse(socket, {
+        roomId,
+        targetUserId: req.userId,
+        decision: "approved",
+      });
+    });
+    setJoinRequests([]);
+  }, [roomId, joinRequests]);
 
   if (state.status === "preparing" || state.status === "joining") {
     return <LoadingState label="Joining room and preparing media..." />;
@@ -137,6 +215,10 @@ function RoomExperience({ roomId, identity }: { roomId: string; identity: UserId
           ) : (
             <ParticipantsSidebar
               participants={participants}
+              joinRequests={joinRequests}
+              onAcceptRequest={handleAcceptRequest}
+              onRejectRequest={handleRejectRequest}
+              onAcceptAll={handleAcceptAllRequests}
               className="h-full border-0 bg-transparent shadow-none [&>div]:px-0 flex-1 overflow-hidden"
             />
           )}
@@ -164,6 +246,10 @@ function RoomExperience({ roomId, identity }: { roomId: string; identity: UserId
           <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pb-24 flex flex-col min-h-0 min-w-0">
             <VideoGrid
               participants={participants}
+              joinRequests={joinRequests}
+              onAcceptRequest={handleAcceptRequest}
+              onRejectRequest={handleRejectRequest}
+              onAcceptAll={handleAcceptAllRequests}
               onPin={(userId) => dispatch({ type: "ui/set-pinned", payload: userId })}
               onSwitchTo={async (userId) => {
                 // Exit fullscreen first, then pin the selected participant
@@ -197,7 +283,14 @@ function RoomExperience({ roomId, identity }: { roomId: string; identity: UserId
           <SheetHeader>
             <SheetTitle>Participants</SheetTitle>
           </SheetHeader>
-          <ParticipantsSidebar participants={participants} className="border-0 bg-transparent mt-4 shadow-none" />
+          <ParticipantsSidebar
+            participants={participants}
+            joinRequests={joinRequests}
+            onAcceptRequest={handleAcceptRequest}
+            onRejectRequest={handleRejectRequest}
+            onAcceptAll={handleAcceptAllRequests}
+            className="border-0 bg-transparent mt-4 shadow-none"
+          />
         </SheetContent>
       </Sheet>
 
@@ -213,43 +306,140 @@ function RoomExperience({ roomId, identity }: { roomId: string; identity: UserId
   );
 }
 
+/* ─────────────────── Room Client Orchestrator ─────────────────── */
+
+type RoomPhase = "lobby" | "waiting" | "rejected" | "joined";
+
 export function RoomClient({ roomId }: { roomId: string }) {
-  const { identity, hydrated } = usePersistentIdentity();
+  const { identity, hydrated, upsertIdentity } = usePersistentIdentity();
+  const [phase, setPhase] = useState<RoomPhase>("lobby");
+  const [activeIdentity, setActiveIdentity] = useState<UserIdentity | null>(null);
+  const socketListenersAttached = useRef(false);
+
+  // Safely check if the user is the room creator, ensuring calculation happens only on client
+  const [isCreator, setIsCreator] = useState(false);
+  useEffect(() => {
+    if (hydrated) {
+      setIsCreator(isRoomCreator(roomId));
+    }
+  }, [hydrated, roomId]);
+
+  // Auto-bypass the lobby if the user is the room creator and has a valid identity
+  useEffect(() => {
+    if (hydrated && isCreator && identity && phase === "lobby") {
+      setActiveIdentity(identity);
+      setPhase("joined");
+    }
+  }, [hydrated, isCreator, identity, phase]);
+
+  // Handle the "Join" action from the lobby
+  const handleLobbyJoin = useCallback(
+    async (displayName: string) => {
+      const nextIdentity = upsertIdentity(displayName);
+      setActiveIdentity(nextIdentity);
+
+      // If the user is the room creator (host), skip waiting room
+      if (isCreator) {
+        setPhase("joined");
+        return;
+      }
+
+      // Otherwise, the user is a guest → send join request and enter waiting room
+      setPhase("waiting");
+
+      try {
+        const socket = getSocket();
+        await sendJoinRequest(socket, {
+          roomId,
+          user: nextIdentity,
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Unable to send join request.");
+        setPhase("lobby");
+      }
+    },
+    [isCreator, roomId, upsertIdentity],
+  );
+
+  // Listen for approval/rejection from the server
+  useEffect(() => {
+    if (phase !== "waiting" || socketListenersAttached.current) return;
+
+    const socket = getSocket();
+    socketListenersAttached.current = true;
+
+    const handleApproved = (_payload: JoinRequestApprovedPayload) => {
+      setPhase("joined");
+      toast.success("You've been admitted to the meeting!");
+    };
+
+    const handleRejected = (_payload: JoinRequestRejectedPayload) => {
+      setPhase("rejected");
+      disconnectSocket();
+    };
+
+    socket.on(SOCKET_EVENTS.ROOM.JOIN_REQUEST_APPROVED, handleApproved);
+    socket.on(SOCKET_EVENTS.ROOM.JOIN_REQUEST_REJECTED, handleRejected);
+
+    return () => {
+      socket.off(SOCKET_EVENTS.ROOM.JOIN_REQUEST_APPROVED, handleApproved);
+      socket.off(SOCKET_EVENTS.ROOM.JOIN_REQUEST_REJECTED, handleRejected);
+      socketListenersAttached.current = false;
+    };
+  }, [phase]);
 
   if (!hydrated) {
     return <LoadingState label="Loading your identity..." className="min-h-screen" />;
   }
 
-  if (!identity) {
+  // Phase: Lobby — always shown first
+  if (phase === "lobby") {
     return (
-      <div className="mx-auto flex min-h-screen max-w-xl items-center px-4">
-        <Card className="w-full">
-          <CardHeader>
-            <CardTitle>Display name required</CardTitle>
-            <CardDescription>
-              Join through the home page first so Streamify can store your local
-              identity.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={ROUTES.home}
-              className={cn(
-                "inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-medium text-slate-100 transition hover:bg-white/10",
-              )}
-            >
-              Go to home
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+      <GuestJoinLobby
+        roomId={roomId}
+        initialDisplayName={identity?.displayName ?? ""}
+        onJoin={handleLobbyJoin}
+      />
     );
   }
 
+  // Phase: Waiting Room — guest waiting for host approval
+  if (phase === "waiting") {
+    return (
+      <WaitingRoom
+        roomId={roomId}
+        displayName={activeIdentity?.displayName ?? ""}
+        status="waiting"
+        onBack={() => {
+          disconnectSocket();
+          setPhase("lobby");
+        }}
+      />
+    );
+  }
+
+  // Phase: Rejected
+  if (phase === "rejected") {
+    return (
+      <WaitingRoom
+        roomId={roomId}
+        displayName={activeIdentity?.displayName ?? ""}
+        status="rejected"
+        onBack={() => setPhase("lobby")}
+      />
+    );
+  }
+
+  // Phase: Joined — enter the room
+  const joinIdentity = activeIdentity ?? identity;
+  if (!joinIdentity) {
+    return <LoadingState label="Preparing session..." className="min-h-screen" />;
+  }
+
   return (
-    <RoomProvider roomId={roomId} currentUser={identity}>
+    <RoomProvider roomId={roomId} currentUser={joinIdentity}>
       <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-6 px-4 py-6 lg:px-6 lg:py-8">
-        <RoomExperience roomId={roomId} identity={identity} />
+        <RoomExperience roomId={roomId} identity={joinIdentity} />
       </div>
     </RoomProvider>
   );

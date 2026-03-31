@@ -6,6 +6,12 @@ export const SOCKET_EVENTS = {
     ERROR: "room:error",
     LEAVE: "room:leave",
     PARTICIPANTS: "room:participants",
+    JOIN_REQUEST: "room:join-request",
+    JOIN_RESPONSE: "room:join-response",
+    JOIN_REQUEST_RECEIVED: "room:join-request-received",
+    JOIN_REQUEST_APPROVED: "room:join-request-approved",
+    JOIN_REQUEST_REJECTED: "room:join-request-rejected",
+    JOIN_REQUEST_CANCELLED: "room:join-request-cancelled",
   },
   PRESENCE: {
     USER_JOINED: "presence:user-joined",
