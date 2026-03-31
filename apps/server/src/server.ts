@@ -19,7 +19,7 @@ const roomService = new RoomService(new InMemoryRoomStore());
 const chatService = new ChatService();
 const userIdentityService = new UserIdentityService();
 
-const app = createApp(rtcConfigService);
+const app = createApp(rtcConfigService, roomService);
 const httpServer = createServer(app);
 const io: AppSocketServer = new Server(httpServer, {
   cors: {

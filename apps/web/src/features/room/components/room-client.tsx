@@ -40,14 +40,14 @@ import { getSocket, disconnectSocket } from "@/shared/lib/socket";
 
 /* ─────────────────── Room Experience (inside room) ─────────────────── */
 
-function RoomExperience({ roomId, identity }: { roomId: string; identity: UserIdentity }) {
+function RoomExperience({ roomId, identity, initialMedia }: { roomId: string; identity: UserIdentity, initialMedia?: { mic: boolean; cam: boolean; screen: boolean } }) {
   const { state, dispatch } = useRoomStore();
   const [chatOpen, setChatOpen] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "participants">("chat");
   const [joinRequests, setJoinRequests] = useState<UserIdentity[]>([]);
   const { copyRoomLink, leaveRoom, sendMessage, toggleCamera, toggleMicrophone, toggleScreenShare } =
-    useRoomSession(roomId, identity);
+    useRoomSession(roomId, identity, initialMedia);
 
   const participants = useSortedParticipants(Object.values(state.participants));
   const localParticipant = participants.find((participant) => participant.userId === identity.userId);
@@ -314,6 +314,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const { identity, hydrated, upsertIdentity } = usePersistentIdentity();
   const [phase, setPhase] = useState<RoomPhase>("lobby");
   const [activeIdentity, setActiveIdentity] = useState<UserIdentity | null>(null);
+  const [initialMedia, setInitialMedia] = useState<{ mic: boolean; cam: boolean; screen: boolean } | undefined>();
   const socketListenersAttached = useRef(false);
 
   // Safely check if the user is the room creator, ensuring calculation happens only on client
@@ -334,9 +335,10 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // Handle the "Join" action from the lobby
   const handleLobbyJoin = useCallback(
-    async (displayName: string) => {
+    async (displayName: string, media?: { mic: boolean; cam: boolean; screen: boolean }) => {
       const nextIdentity = upsertIdentity(displayName);
       setActiveIdentity(nextIdentity);
+      if (media) setInitialMedia(media);
 
       // If the user is the room creator (host), skip waiting room
       if (isCreator) {
@@ -439,7 +441,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
   return (
     <RoomProvider roomId={roomId} currentUser={joinIdentity}>
       <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-6 px-4 py-6 lg:px-6 lg:py-8">
-        <RoomExperience roomId={roomId} identity={joinIdentity} />
+        <RoomExperience roomId={roomId} identity={joinIdentity} initialMedia={initialMedia} />
       </div>
     </RoomProvider>
   );

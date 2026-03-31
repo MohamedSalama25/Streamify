@@ -43,7 +43,7 @@ interface UseRoomSessionResult {
   toggleScreenShare: () => Promise<void>;
 }
 
-export function useRoomSession(roomId: string, identity: UserIdentity): UseRoomSessionResult {
+export function useRoomSession(roomId: string, identity: UserIdentity, initialMedia?: { mic: boolean; cam: boolean; screen: boolean }): UseRoomSessionResult {
   const router = useRouter();
   const { state, dispatch } = useRoomStore();
   const socket = useMemo(() => getSocket(), []);
@@ -182,11 +182,29 @@ export function useRoomSession(roomId: string, identity: UserIdentity): UseRoomS
           toast.warning(mediaBootstrap.error);
         }
 
+        if (initialMedia) {
+          if (!initialMedia.mic && mediaManager.getMediaState().microphoneEnabled) {
+            mediaManager.toggleMicrophone();
+          }
+          if (!initialMedia.cam && mediaManager.getMediaState().cameraEnabled) {
+            await mediaManager.toggleCamera();
+          }
+          if (initialMedia.screen && !mediaManager.getMediaState().screenSharing) {
+            await mediaManager.startScreenShare().catch(() => {
+              toast.error("Could not start screen sharing automatically.");
+            });
+          }
+        }
+
+        const currentMediaState = mediaManager.getMediaState();
+        const currentPreview = mediaManager.getPreviewStream();
+        const currentOutgoing = mediaManager.getOutgoingStream();
+
         dispatch({
           type: "participants/set-stream",
           payload: {
             userId: identity.userId,
-            stream: mediaBootstrap.previewStream,
+            stream: currentPreview,
           },
         });
 
@@ -194,7 +212,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity): UseRoomS
           roomId,
           selfUserId: identity.userId,
           iceServers: rtcConfig.iceServers as RTCIceServer[],
-          localStream: mediaBootstrap.outgoingStream,
+          localStream: currentOutgoing,
           onRemoteStream: (userId, stream) => {
             dispatch({
               type: "participants/set-stream",

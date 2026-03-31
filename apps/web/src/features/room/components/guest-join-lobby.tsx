@@ -1,24 +1,68 @@
 "use client";
 
-import { useState, useCallback, type FormEvent } from "react";
-import { UserRound, ArrowRight, Shield, Sparkles, Lock, Video } from "lucide-react";
-
-import { Input } from "@/features/ui/components/input";
-import { Button } from "@/features/ui/components/button";
-import { useI18n } from "@/shared/i18n";
+import React, { useEffect, useState, useCallback, type FormEvent } from "react";
+import { Mic, Video as VideoIcon, MonitorUp, MicOff, VideoOff, MonitorOff, ArrowRight, ShieldCheck, EyeOff, User } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 
 interface GuestJoinLobbyProps {
     roomId: string;
     initialDisplayName?: string;
-    onJoin: (displayName: string) => void;
+    onJoin: (displayName: string, media: { mic: boolean; cam: boolean; screen: boolean }) => void;
 }
 
 export function GuestJoinLobby({ roomId, initialDisplayName = "", onJoin }: GuestJoinLobbyProps) {
     const [displayName, setDisplayName] = useState(initialDisplayName);
-    const [isFocused, setIsFocused] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
-    const { t } = useI18n();
+
+    const [micState, setMicState] = useState(true);
+    const [camState, setCamState] = useState(true);
+    const [screenState, setScreenState] = useState(false);
+    const videoRef = React.useRef<HTMLVideoElement>(null);
+    const streamRef = React.useRef<MediaStream | null>(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        const initMedia = async () => {
+            if (!camState) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                if (isMounted) {
+                    streamRef.current = stream;
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = stream;
+                    }
+                }
+            } catch (err) {
+                console.warn("Lobby cam access denied or unavailable", err);
+            }
+        };
+        initMedia();
+        return () => {
+            isMounted = false;
+            streamRef.current?.getTracks().forEach(t => t.stop());
+        };
+    }, []);
+
+    const handleToggleCam = async () => {
+        if (camState) {
+            setCamState(false);
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(t => t.stop());
+                streamRef.current = null;
+            }
+            if (videoRef.current) videoRef.current.srcObject = null;
+        } else {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                setCamState(true);
+                streamRef.current = stream;
+                if (videoRef.current) videoRef.current.srcObject = stream;
+            } catch (err) {
+                console.warn("Cannot enable cam", err);
+            }
+        }
+    };
+
 
     const isValid = displayName.trim().length >= 2;
 
@@ -27,175 +71,165 @@ export function GuestJoinLobby({ roomId, initialDisplayName = "", onJoin }: Gues
             e.preventDefault();
             if (!isValid || isJoining) return;
             setIsJoining(true);
-            onJoin(displayName.trim());
+            onJoin(displayName.trim(), { mic: micState, cam: camState, screen: screenState });
         },
-        [displayName, isValid, isJoining, onJoin],
+        [displayName, isValid, isJoining, micState, camState, screenState, onJoin]
     );
 
     return (
-        <div className="fixed inset-0 bg-surface-container-lowest font-body text-on-surface flex items-center justify-center overflow-hidden">
-            {/* ── Animated Background ── */}
-            <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-                <div className="absolute top-1/4 left-1/4 w-[800px] h-[800px] bg-primary/20 rounded-full blur-[160px] opacity-20 animate-pulse" />
-                <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-secondary/20 rounded-full blur-[160px] opacity-30 animate-pulse [animation-delay:1s]" />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-primary-container/10 rounded-full blur-[120px] opacity-20 animate-pulse [animation-delay:2s]" />
-            </div>
+        <div className="min-h-screen w-full bg-[#0f131e] text-[#dfe2f2] font-body overflow-hidden flex flex-col xl:flex-row shadow-[inset_0_0_150px_rgba(0,0,0,0.5)]">
 
-            {/* ── Floating Particles ── */}
-            <div className="absolute inset-0 pointer-events-none z-0">
-                {[...Array(6)].map((_, i) => (
-                    <div
-                        key={i}
-                        className="absolute w-1 h-1 bg-primary/30 rounded-full animate-float"
-                        style={{
-                            left: `${15 + i * 14}%`,
-                            top: `${20 + (i % 3) * 25}%`,
-                            animationDelay: `${i * 0.7}s`,
-                            animationDuration: `${3 + i * 0.5}s`,
-                        }}
-                    />
-                ))}
-            </div>
 
-            {/* ── Main Content ── */}
-            <div className="relative z-10 w-full max-w-md px-4 animate-fade-in-up">
-                {/* ── Logo & Branding ── */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-5 shadow-[0_0_40px_hsl(var(--primary)/0.15)]">
-                        <Video className="h-7 w-7 text-primary" />
-                    </div>
-                    <h1 className="text-2xl font-bold font-display tracking-tight text-on-surface">
-                        Streamify
-                    </h1>
-                    <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-surface-container-high/60 px-3 py-1 border border-outline-variant/10">
-                        <div className="h-1.5 w-1.5 rounded-full bg-secondary animate-pulse" />
-                        <span className="text-xs uppercase tracking-widest font-medium text-on-surface-variant">
-                            Room: {roomId}
-                        </span>
-                    </div>
-                </div>
+            {/* Main Stage */}
+            <section className="flex-1 p-8 lg:p-12 flex flex-col items-center justify-center overflow-y-auto relative">
+                <div className="w-full max-w-6xl flex flex-col lg:flex-row gap-12 items-start relative z-10">
 
-                {/* ── Join Card ── */}
-                <div className="session-card rounded-3xl ghost-border shadow-ambient overflow-hidden">
-                    {/* Card Header Gradient */}
-                    <div className="relative px-6 pt-7 pb-5 bg-gradient-to-b from-primary/5 to-transparent">
-                        <h2 className="font-display text-xl font-bold text-on-surface text-center">
-                            {t.session.guestJoinTitle}
-                        </h2>
-                        <p className="text-sm text-on-surface-variant text-center mt-1.5">
-                            {t.session.guestJoinSubtitle}
-                        </p>
-                    </div>
+                    {/* Center Video Column */}
+                    <div className="flex-1 w-full space-y-8">
+                        {/* Glassmorphic Video Container */}
+                        <div className="relative aspect-video rounded-3xl overflow-hidden bg-[rgba(15,19,30,0.6)] backdrop-blur-3xl ring-1 ring-white/10 shadow-2xl group">
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                className={cn(
+                                    "w-full h-full object-cover transition-transform duration-[10s] group-hover:scale-[1.02]",
+                                    !camState && "opacity-0"
+                                )}
+                            />
+                            {!camState && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-[#0f131e]">
+                                    <div className="w-24 h-24 rounded-full bg-[#1b1f2b] flex items-center justify-center border-2 border-white/5 shadow-2xl">
+                                        <User className="w-12 h-12 text-[#908fa0]" />
+                                    </div>
+                                </div>
+                            )}
 
-                    {/* Card Body */}
-                    <form onSubmit={handleSubmit} className="px-6 pb-7 space-y-5">
-                        {/* Name Input */}
-                        <div className="space-y-2">
-                            <label className="text-label-md font-medium uppercase text-on-surface-variant block tracking-wide">
-                                {t.session.displayName}
-                            </label>
-                            <div className="relative group">
-                                <div
-                                    className={cn(
-                                        "absolute -inset-0.5 rounded-xl bg-gradient-to-r from-primary/40 to-primary-container/40 opacity-0 blur-sm transition-opacity duration-500",
-                                        isFocused && "opacity-100",
-                                    )}
-                                />
+                            {/* Top Indicator */}
+                            <div className="absolute top-6 left-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md ring-1 ring-white/10">
+                                <div className="w-2 h-2 rounded-full bg-[#4edea3] animate-pulse"></div>
+                                <span className="text-[10px] font-bold text-white uppercase tracking-widest">
+                                    Preview Only
+                                </span>
+                            </div>
+
+                            {/* Video Controls Overlay */}
+                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-6 py-3 rounded-full bg-[#313441]/80 backdrop-blur-xl ring-1 ring-white/10 shadow-2xl">
+                                <button type="button" onClick={() => setMicState(!micState)} className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-[0_0_15px_rgba(0,0,0,0.2)]", micState ? "bg-[#262a36] hover:bg-[#353945] text-white" : "bg-error text-on-error")}>
+                                    {micState ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+                                </button>
+                                <button type="button" onClick={handleToggleCam} className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-[0_0_15px_rgba(0,0,0,0.2)]", camState ? "bg-[#262a36] hover:bg-[#353945] text-white" : "bg-error text-on-error")}>
+                                    {camState ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+                                </button>
+                                <div className="h-6 w-px bg-white/20 mx-2"></div>
+                                <button type="button" onClick={() => setScreenState(!screenState)} className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-[0_0_15px_rgba(192,193,255,0.1)]", screenState ? "bg-primary text-on-primary" : "bg-[#262a36] hover:bg-[#353945] text-[#c0c1ff]")}>
+                                    {screenState ? <MonitorUp className="h-5 w-5" /> : <MonitorOff className="h-5 w-5" />}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Device Settings */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-[#908fa0] px-1">
+                                    Microphone
+                                </label>
                                 <div className="relative">
-                                    <UserRound
-                                        className={cn(
-                                            "pointer-events-none absolute start-4 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors duration-300",
-                                            isFocused ? "text-primary" : "text-muted-foreground",
-                                        )}
-                                    />
-                                    <Input
-                                        value={displayName}
-                                        onChange={(e) => setDisplayName(e.target.value)}
-                                        onFocus={() => setIsFocused(true)}
-                                        onBlur={() => setIsFocused(false)}
-                                        placeholder={t.session.guestJoinPlaceholder}
-                                        className="ps-11 h-12 rounded-xl text-sm bg-surface-container-lowest/80 border border-outline-variant/10 focus:border-primary/40"
-                                        maxLength={32}
-                                        autoFocus
-                                        autoComplete="off"
-                                        id="guest-display-name"
-                                    />
+                                    <select disabled className="w-full bg-[#171b27] border-0 border-b-2 border-transparent focus:border-[#c0c1ff] focus:ring-0 rounded-xl text-sm py-3 px-4 appearance-none text-white cursor-not-allowed opacity-80">
+                                        <option>System Default Mic</option>
+                                    </select>
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Info Box */}
-                        <div className="flex items-start gap-3 p-3.5 rounded-xl bg-surface-container-lowest/50 border border-outline-variant/10">
-                            <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                            <div>
-                                <p className="text-xs font-semibold text-on-surface">
-                                    {t.session.guestJoinReady}
-                                </p>
-                                <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">
-                                    {t.session.guestJoinReadyDesc}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Join Button */}
-                        <Button
-                            type="submit"
-                            size="lg"
-                            disabled={!isValid || isJoining}
-                            className={cn(
-                                "w-full h-12 text-sm font-bold uppercase tracking-wider transition-all duration-500",
-                                isValid && !isJoining
-                                    ? "shadow-[0_0_30px_hsl(var(--primary)/0.25)] hover:shadow-[0_0_40px_hsl(var(--primary)/0.35)]"
-                                    : "opacity-50",
-                            )}
-                            id="guest-join-button"
-                        >
-                            {isJoining ? (
-                                <div className="flex items-center gap-2">
-                                    <div className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                                    <span>Connecting...</span>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-[#908fa0] px-1">
+                                    Camera
+                                </label>
+                                <div className="relative">
+                                    <select disabled className="w-full bg-[#171b27] border-0 border-b-2 border-transparent focus:border-[#c0c1ff] focus:ring-0 rounded-xl text-sm py-3 px-4 appearance-none text-white cursor-not-allowed opacity-80">
+                                        <option>System Default Camera</option>
+                                    </select>
                                 </div>
-                            ) : (
-                                <>
-                                    {t.session.guestJoinButton}
-                                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                </>
-                            )}
-                        </Button>
-                    </form>
-
-                    {/* Card Footer — Security Badges */}
-                    <div className="px-6 py-4 border-t border-outline-variant/10 bg-surface-container-lowest/30">
-                        <div className="flex items-center justify-center gap-4">
-                            <div className="flex items-center gap-1.5">
-                                <Shield className="h-3 w-3 text-secondary" />
-                                <span className="text-[10px] uppercase tracking-widest font-medium text-on-surface-variant">
-                                    {t.session.guestJoinSecure}
-                                </span>
                             </div>
-                            <div className="w-px h-3 bg-outline-variant/20" />
-                            <div className="flex items-center gap-1.5">
-                                <Sparkles className="h-3 w-3 text-primary" />
-                                <span className="text-[10px] uppercase tracking-widest font-medium text-on-surface-variant">
-                                    {t.session.guestJoinHd}
-                                </span>
-                            </div>
-                            <div className="w-px h-3 bg-outline-variant/20" />
-                            <div className="flex items-center gap-1.5">
-                                <Lock className="h-3 w-3 text-secondary" />
-                                <span className="text-[10px] uppercase tracking-widest font-medium text-on-surface-variant">
-                                    {t.session.guestJoinEncrypted}
-                                </span>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-[#908fa0] px-1">
+                                    Speakers
+                                </label>
+                                <div className="relative">
+                                    <select disabled className="w-full bg-[#171b27] border-0 border-b-2 border-transparent focus:border-[#c0c1ff] focus:ring-0 rounded-xl text-sm py-3 px-4 appearance-none text-white cursor-not-allowed opacity-80">
+                                        <option>System Default Speaker</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {/* ── Bottom Branding ── */}
-                <p className="text-center mt-6 text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/40 font-medium">
-                    Powered by Streamify Elite
-                </p>
-            </div>
+                    {/* Action Panel Column */}
+                    <div className="w-full lg:w-80 space-y-8 pt-4">
+                        <div className="space-y-4">
+                            <h1 className="text-4xl font-extrabold font-headline tracking-tighter text-white">
+                                Ready to join?
+                            </h1>
+                            <p className="text-[#c7c4d7] text-sm leading-relaxed">
+                                Everything is set. Your camera and microphone are optimized for the elite experience.
+                            </p>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                            <div className="space-y-2 mb-2">
+                                <div className="flex justify-between items-center px-1">
+                                    <label htmlFor="display-name" className="text-[10px] font-bold uppercase tracking-widest text-[#c0c1ff]">
+                                        Display Name
+                                    </label>
+                                </div>
+                                <input
+                                    id="display-name"
+                                    type="text"
+                                    value={displayName}
+                                    onChange={(e) => setDisplayName(e.target.value)}
+                                    placeholder="Enter your name..."
+                                    className="w-full bg-[#171b27] border border-white/10 focus:border-[#c0c1ff] focus:ring-1 focus:ring-[#c0c1ff]/20 rounded-xl text-sm py-4 px-5 text-white placeholder:text-[#908fa0] transition-all outline-none"
+                                    autoComplete="off"
+                                    maxLength={32}
+                                    autoFocus
+                                />
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={!isValid || isJoining}
+                                className={cn(
+                                    "w-full py-5 rounded-xl font-bold text-[#1000a9] shadow-lg shadow-[#c0c1ff]/20 hover:shadow-[#c0c1ff]/30 transition-all flex items-center justify-center gap-3 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed",
+                                    "bg-gradient-to-br from-[#c0c1ff] to-[#8083ff]"
+                                )}
+                            >
+                                <span className="relative z-10 text-lg">
+                                    {isJoining ? "Connecting..." : "Join Session"}
+                                </span>
+                                {!isJoining && (
+                                    <ArrowRight className="h-5 w-5 relative z-10 transition-transform group-hover:translate-x-1" />
+                                )}
+                                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+                            </button>
+                        </form>
+
+                        <div className="p-6 rounded-2xl bg-[#171b27] ring-1 ring-white/5 space-y-4">
+                            <h4 className="text-xs font-bold uppercase tracking-tighter text-[#908fa0]">
+                                Security Check
+                            </h4>
+                            <div className="flex items-center gap-3 text-sm text-[#4edea3]">
+                                <ShieldCheck className="h-5 w-5" />
+                                <span>End-to-End Encrypted</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-[#c7c4d7]">
+                                <EyeOff className="h-5 w-5 text-[#908fa0]" />
+                                <span>Waiting room enabled</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
         </div>
     );
 }
