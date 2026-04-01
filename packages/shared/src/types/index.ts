@@ -57,17 +57,20 @@ export interface RoomCreatePayload {
 
 export interface RoomCreateResponse {
   roomId: string;
+  accessToken: string;
 }
 
 export interface RoomJoinPayload {
   roomId: string;
   user: UserIdentity;
+  accessToken: string;
 }
 
 export interface RoomJoinedPayload {
   roomId: string;
   participant: RoomParticipant;
   participants: RoomParticipant[];
+  accessToken: string;
 }
 
 export interface RoomLeavePayload {
@@ -187,6 +190,7 @@ export interface JoinRequestReceivedPayload {
 
 export interface JoinRequestApprovedPayload {
   roomId: string;
+  accessToken: string;
 }
 
 export interface JoinRequestRejectedPayload {

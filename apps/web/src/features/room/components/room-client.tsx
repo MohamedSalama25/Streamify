@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import {
   SOCKET_EVENTS,
   type JoinRequestApprovedPayload,
   type JoinRequestRejectedPayload,
-  type JoinRequestReceivedPayload,
   type UserIdentity,
 } from "@streamify/shared";
 import { toast } from "sonner";
@@ -19,16 +18,23 @@ import { ChatPanel } from "@/features/chat/components/chat-panel";
 import { useRoomSession } from "@/features/room/hooks/use-room-session";
 import { RoomProvider, useRoomStore } from "@/features/room/store/room-store";
 import { RoomControls } from "@/features/room/components/room-controls";
-import { RoomHeader } from "@/features/room/components/room-header";
 import { GuestJoinLobby } from "@/features/room/components/guest-join-lobby";
-import { WaitingRoom, type WaitingRoomStatus } from "@/features/room/components/waiting-room";
-import { sendJoinRequest, sendJoinResponse } from "@/features/room/services/room-socket-service";
-import { isRoomCreator } from "@/features/room/utils/room-creator-store";
+import { WaitingRoom } from "@/features/room/components/waiting-room";
+import {
+  sendCancelJoinRequest,
+  sendJoinRequest,
+  sendJoinResponse,
+} from "@/features/room/services/room-socket-service";
+import {
+  clearRoomAccess,
+  getRoomAccessToken,
+  isRoomCreator,
+  storeRoomAccess,
+} from "@/features/room/utils/room-creator-store";
 import { VideoGrid } from "@/features/rtc/components/video-grid";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/features/ui/components/sheet";
@@ -40,17 +46,41 @@ import { getSocket, disconnectSocket } from "@/shared/lib/socket";
 
 /* ─────────────────── Room Experience (inside room) ─────────────────── */
 
-function RoomExperience({ roomId, identity, initialMedia }: { roomId: string; identity: UserIdentity, initialMedia?: { mic: boolean; cam: boolean; screen: boolean } }) {
+function RoomExperience({
+  roomId,
+  identity,
+  accessToken,
+  initialMedia,
+}: {
+  roomId: string;
+  identity: UserIdentity;
+  accessToken: string;
+  initialMedia?: { mic: boolean; cam: boolean; screen: boolean };
+}) {
   const { state, dispatch } = useRoomStore();
   const [chatOpen, setChatOpen] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "participants">("chat");
   const [joinRequests, setJoinRequests] = useState<UserIdentity[]>([]);
   const { copyRoomLink, leaveRoom, sendMessage, toggleCamera, toggleMicrophone, toggleScreenShare } =
-    useRoomSession(roomId, identity, initialMedia);
+    useRoomSession(roomId, identity, accessToken, initialMedia);
 
   const participants = useSortedParticipants(Object.values(state.participants));
   const localParticipant = participants.find((participant) => participant.userId === identity.userId);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      setIsMobileViewport(window.innerWidth < 1280);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, []);
 
   // Listen for join requests (host only)
   useEffect(() => {
@@ -78,41 +108,55 @@ function RoomExperience({ roomId, identity, initialMedia }: { roomId: string; id
   }, []);
 
   const handleAcceptRequest = useCallback(
-    (userId: string) => {
+    async (userId: string) => {
       const socket = getSocket();
-      sendJoinResponse(socket, {
-        roomId,
-        targetUserId: userId,
-        decision: "approved",
-      });
-      setJoinRequests((prev) => prev.filter((r) => r.userId !== userId));
+      try {
+        await sendJoinResponse(socket, {
+          roomId,
+          targetUserId: userId,
+          decision: "approved",
+        });
+        setJoinRequests((prev) => prev.filter((r) => r.userId !== userId));
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Unable to approve the join request.");
+      }
     },
     [roomId],
   );
 
   const handleRejectRequest = useCallback(
-    (userId: string) => {
+    async (userId: string) => {
       const socket = getSocket();
-      sendJoinResponse(socket, {
-        roomId,
-        targetUserId: userId,
-        decision: "rejected",
-      });
-      setJoinRequests((prev) => prev.filter((r) => r.userId !== userId));
+      try {
+        await sendJoinResponse(socket, {
+          roomId,
+          targetUserId: userId,
+          decision: "rejected",
+        });
+        setJoinRequests((prev) => prev.filter((r) => r.userId !== userId));
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Unable to reject the join request.");
+      }
     },
     [roomId],
   );
 
-  const handleAcceptAllRequests = useCallback(() => {
+  const handleAcceptAllRequests = useCallback(async () => {
     const socket = getSocket();
-    joinRequests.forEach((req) => {
-      sendJoinResponse(socket, {
-        roomId,
-        targetUserId: req.userId,
-        decision: "approved",
-      });
-    });
-    setJoinRequests([]);
+
+    try {
+      for (const req of joinRequests) {
+        await sendJoinResponse(socket, {
+          roomId,
+          targetUserId: req.userId,
+          decision: "approved",
+        });
+      }
+
+      setJoinRequests([]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to approve all join requests.");
+    }
   }, [roomId, joinRequests]);
 
   if (state.status === "preparing" || state.status === "joining") {
@@ -278,7 +322,7 @@ function RoomExperience({ roomId, identity, initialMedia }: { roomId: string; id
       />
 
       {/* Mobile Sheets */}
-      <Sheet open={participantsOpen && window.innerWidth < 1280} onOpenChange={setParticipantsOpen}>
+      <Sheet open={participantsOpen && isMobileViewport} onOpenChange={setParticipantsOpen}>
         <SheetContent side="right" className="xl:hidden bg-surface border-white/5">
           <SheetHeader>
             <SheetTitle>Participants</SheetTitle>
@@ -294,7 +338,7 @@ function RoomExperience({ roomId, identity, initialMedia }: { roomId: string; id
         </SheetContent>
       </Sheet>
 
-      <Sheet open={chatOpen && window.innerWidth < 1280} onOpenChange={setChatOpen}>
+      <Sheet open={chatOpen && isMobileViewport} onOpenChange={setChatOpen}>
         <SheetContent side="right" className="xl:hidden bg-surface border-white/5">
           <SheetHeader>
             <SheetTitle>Chat</SheetTitle>
@@ -314,24 +358,25 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const { identity, hydrated, upsertIdentity } = usePersistentIdentity();
   const [phase, setPhase] = useState<RoomPhase>("lobby");
   const [activeIdentity, setActiveIdentity] = useState<UserIdentity | null>(null);
+  const [roomAccessToken, setRoomAccessToken] = useState<string | null>(null);
   const [initialMedia, setInitialMedia] = useState<{ mic: boolean; cam: boolean; screen: boolean } | undefined>();
-  const socketListenersAttached = useRef(false);
 
   // Safely check if the user is the room creator, ensuring calculation happens only on client
   const [isCreator, setIsCreator] = useState(false);
   useEffect(() => {
     if (hydrated) {
       setIsCreator(isRoomCreator(roomId));
+      setRoomAccessToken(getRoomAccessToken(roomId));
     }
   }, [hydrated, roomId]);
 
-  // Auto-bypass the lobby if the user is the room creator and has a valid identity
+  // Auto-bypass the lobby when this browser already holds a room access token.
   useEffect(() => {
-    if (hydrated && isCreator && identity && phase === "lobby") {
+    if (hydrated && roomAccessToken && identity && phase === "lobby") {
       setActiveIdentity(identity);
       setPhase("joined");
     }
-  }, [hydrated, isCreator, identity, phase]);
+  }, [hydrated, identity, phase, roomAccessToken]);
 
   // Handle the "Join" action from the lobby
   const handleLobbyJoin = useCallback(
@@ -341,12 +386,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
       if (media) setInitialMedia(media);
 
       // If the user is the room creator (host), skip waiting room
-      if (isCreator) {
+      if (isCreator && roomAccessToken) {
         setPhase("joined");
         return;
       }
 
       // Otherwise, the user is a guest → send join request and enter waiting room
+      clearRoomAccess(roomId);
+      setRoomAccessToken(null);
       setPhase("waiting");
 
       try {
@@ -357,25 +404,37 @@ export function RoomClient({ roomId }: { roomId: string }) {
         });
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Unable to send join request.");
+        disconnectSocket();
         setPhase("lobby");
       }
     },
-    [isCreator, roomId, upsertIdentity],
+    [isCreator, roomAccessToken, roomId, upsertIdentity],
   );
 
   // Listen for approval/rejection from the server
   useEffect(() => {
-    if (phase !== "waiting" || socketListenersAttached.current) return;
+    if (phase !== "waiting") return;
 
     const socket = getSocket();
-    socketListenersAttached.current = true;
 
-    const handleApproved = (_payload: JoinRequestApprovedPayload) => {
+    const handleApproved = (payload: JoinRequestApprovedPayload) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+
+      storeRoomAccess(roomId, payload.accessToken);
+      setRoomAccessToken(payload.accessToken);
       setPhase("joined");
       toast.success("You've been admitted to the meeting!");
     };
 
-    const handleRejected = (_payload: JoinRequestRejectedPayload) => {
+    const handleRejected = (payload: JoinRequestRejectedPayload) => {
+      if (payload.roomId !== roomId) {
+        return;
+      }
+
+      clearRoomAccess(roomId);
+      setRoomAccessToken(null);
       setPhase("rejected");
       disconnectSocket();
     };
@@ -386,9 +445,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     return () => {
       socket.off(SOCKET_EVENTS.ROOM.JOIN_REQUEST_APPROVED, handleApproved);
       socket.off(SOCKET_EVENTS.ROOM.JOIN_REQUEST_REJECTED, handleRejected);
-      socketListenersAttached.current = false;
     };
-  }, [phase]);
+  }, [phase, roomId]);
 
   if (!hydrated) {
     return <LoadingState label="Loading your identity..." className="min-h-screen" />;
@@ -413,8 +471,23 @@ export function RoomClient({ roomId }: { roomId: string }) {
         displayName={activeIdentity?.displayName ?? ""}
         status="waiting"
         onBack={() => {
-          disconnectSocket();
-          setPhase("lobby");
+          void (async () => {
+            if (activeIdentity) {
+              try {
+                await sendCancelJoinRequest(getSocket(), {
+                  roomId,
+                  userId: activeIdentity.userId,
+                });
+              } catch {
+                // Best effort cancellation. Local cleanup still runs.
+              }
+            }
+
+            clearRoomAccess(roomId);
+            setRoomAccessToken(null);
+            disconnectSocket();
+            setPhase("lobby");
+          })();
         }}
       />
     );
@@ -427,21 +500,30 @@ export function RoomClient({ roomId }: { roomId: string }) {
         roomId={roomId}
         displayName={activeIdentity?.displayName ?? ""}
         status="rejected"
-        onBack={() => setPhase("lobby")}
+        onBack={() => {
+          clearRoomAccess(roomId);
+          setRoomAccessToken(null);
+          setPhase("lobby");
+        }}
       />
     );
   }
 
   // Phase: Joined — enter the room
   const joinIdentity = activeIdentity ?? identity;
-  if (!joinIdentity) {
+  if (!joinIdentity || !roomAccessToken) {
     return <LoadingState label="Preparing session..." className="min-h-screen" />;
   }
 
   return (
     <RoomProvider roomId={roomId} currentUser={joinIdentity}>
       <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-6 px-4 py-6 lg:px-6 lg:py-8">
-        <RoomExperience roomId={roomId} identity={joinIdentity} initialMedia={initialMedia} />
+        <RoomExperience
+          roomId={roomId}
+          identity={joinIdentity}
+          accessToken={roomAccessToken}
+          initialMedia={initialMedia}
+        />
       </div>
     </RoomProvider>
   );

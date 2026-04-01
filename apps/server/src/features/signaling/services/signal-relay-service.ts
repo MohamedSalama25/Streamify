@@ -1,5 +1,6 @@
 import { SOCKET_EVENTS, type ServerToClientEvents } from "@streamify/shared";
 
+import { logger } from "../../../common/logger/logger";
 import type { AppSocketServer } from "../../../common/types/socket";
 import type { RoomService } from "../../rooms/services/room-service";
 
@@ -17,6 +18,23 @@ export class SignalRelayService {
   ) {
     const socketId = this.roomService.getParticipantSocketId(roomId, targetUserId);
     if (!socketId) {
+      logger.debug("signaling.relay.skipped", {
+        roomId,
+        targetUserId,
+        event,
+        reason: "missing-socket-id",
+      });
+      return false;
+    }
+
+    if (!this.io.sockets.sockets.get(socketId)) {
+      logger.debug("signaling.relay.skipped", {
+        roomId,
+        targetUserId,
+        event,
+        reason: "socket-not-connected",
+        socketId,
+      });
       return false;
     }
 
@@ -34,6 +52,11 @@ export class SignalRelayService {
     payload: Parameters<ServerToClientEvents[typeof SOCKET_EVENTS.RTC.PEER_READY]>[0],
     exceptSocketId: string,
   ) {
+    logger.debug("signaling.peer-ready.broadcast", {
+      roomId,
+      exceptSocketId,
+      userId: payload.user.userId,
+    });
     this.io.to(roomId).except(exceptSocketId).emit(SOCKET_EVENTS.RTC.PEER_READY, payload);
   }
 }

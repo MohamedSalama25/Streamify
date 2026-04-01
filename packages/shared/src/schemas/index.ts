@@ -17,6 +17,8 @@ export const userIdentitySchema = z.object({
   displayName: displayNameSchema,
 });
 
+export const accessTokenSchema = z.string().trim().min(24, "Invalid access token.");
+
 export const participantMediaStateSchema = z.object({
   microphoneEnabled: z.boolean(),
   cameraEnabled: z.boolean(),
@@ -38,6 +40,7 @@ export const roomCreatePayloadSchema = z.object({
 export const roomJoinPayloadSchema = z.object({
   roomId: roomIdSchema,
   user: userIdentitySchema,
+  accessToken: accessTokenSchema,
 });
 
 export const roomLeavePayloadSchema = z.object({
@@ -134,4 +137,3 @@ export const iceServerConfigSchema = z.object({
 export const rtcConfigurationResponseSchema = z.object({
   iceServers: z.array(iceServerConfigSchema),
 });
-

@@ -1,6 +1,7 @@
 import type { RoomParticipant } from "@streamify/shared";
 
 import type {
+  RoomAccessGrant,
   PendingJoinRequest,
   RoomParticipantRecord,
   RoomRecord,
@@ -11,10 +12,11 @@ export class InMemoryRoomStore {
   private readonly rooms = new Map<string, RoomRecord>();
   private readonly socketLookup = new Map<string, RoomSocketLookup>();
 
-  createRoom(roomId: string) {
+  createRoom(roomId: string, hostReservation: RoomAccessGrant) {
     const room: RoomRecord = {
       roomId,
       createdAt: new Date().toISOString(),
+      hostReservation,
       participants: new Map(),
       pendingJoinRequests: new Map(),
     };
@@ -29,6 +31,10 @@ export class InMemoryRoomStore {
 
   getRoom(roomId: string) {
     return this.rooms.get(roomId) ?? null;
+  }
+
+  listRooms() {
+    return Array.from(this.rooms.values());
   }
 
   deleteRoom(roomId: string) {
@@ -151,6 +157,22 @@ export class InMemoryRoomStore {
 
   getPendingJoinRequest(roomId: string, userId: string) {
     return this.getRoom(roomId)?.pendingJoinRequests.get(userId) ?? null;
+  }
+
+  updatePendingJoinRequest(
+    roomId: string,
+    userId: string,
+    updater: (request: PendingJoinRequest) => PendingJoinRequest,
+  ) {
+    const room = this.getRoom(roomId);
+    if (!room) return null;
+
+    const current = room.pendingJoinRequests.get(userId);
+    if (!current) return null;
+
+    const next = updater(current);
+    room.pendingJoinRequests.set(userId, next);
+    return next;
   }
 
   findPendingBySocket(socketId: string): { roomId: string; userId: string } | null {

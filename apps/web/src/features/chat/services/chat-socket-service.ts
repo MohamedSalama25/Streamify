@@ -2,23 +2,11 @@
 
 import { SOCKET_EVENTS, type ChatSendPayload } from "@streamify/shared";
 
+import { emitWithAck } from "@/features/room/services/room-socket-service";
 import type { StreamifySocket } from "@/shared/lib/socket";
 
 export async function sendChatMessage(socket: StreamifySocket, payload: ChatSendPayload) {
-  return new Promise<void>((resolve, reject) => {
-    socket.emit(SOCKET_EVENTS.CHAT.SEND, payload, (response) => {
-      if (!response) {
-        resolve();
-        return;
-      }
-
-      if (!response.ok) {
-        reject(new Error(response.error.message));
-        return;
-      }
-
-      resolve();
-    });
+  await emitWithAck<{ messageId: string }>(socket, SOCKET_EVENTS.CHAT.SEND, payload, {
+    connect: false,
   });
 }
-

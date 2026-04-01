@@ -38,7 +38,7 @@ export function useHomeActions({
       });
 
       // Mark this user as the creator of this room
-      markAsCreator(result.roomId);
+      markAsCreator(result.roomId, result.accessToken);
 
       startTransition(() => {
         router.push(ROUTES.room(result.roomId));

@@ -114,12 +114,31 @@ export class LocalMediaManager {
     return this.screenTrack ?? this.cameraTrack;
   }
 
-  toggleMicrophone() {
-    if (!this.audioTrack) {
+  private async acquireAudioTrack() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const nextAudioTrack = stream.getAudioTracks()[0] ?? null;
+
+      if (!nextAudioTrack) {
+        throw new Error("Microphone is unavailable.");
+      }
+
+      this.audioTrack?.stop();
+      this.audioTrack = nextAudioTrack;
+      return nextAudioTrack;
+    } catch {
       throw new Error("Microphone is unavailable.");
     }
+  }
 
-    this.audioTrack.enabled = !this.audioTrack.enabled;
+  async toggleMicrophone() {
+    if (this.audioTrack?.readyState === "live") {
+      this.audioTrack.enabled = !this.audioTrack.enabled;
+      return this.getMediaState();
+    }
+
+    const nextAudioTrack = await this.acquireAudioTrack();
+    nextAudioTrack.enabled = true;
     return this.getMediaState();
   }
 

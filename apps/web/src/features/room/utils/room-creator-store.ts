@@ -1,24 +1,60 @@
-const CREATOR_KEY = "streamify.room-creator";
+import { STORAGE_KEYS } from "@streamify/shared";
 
-export function getCreatedRoomIds(): string[] {
-    if (typeof window === "undefined") return [];
-    try {
-        const raw = localStorage.getItem(CREATOR_KEY);
-        return raw ? (JSON.parse(raw) as string[]) : [];
-    } catch {
-        return [];
-    }
+interface StoredRoomAccess {
+  accessToken: string;
+  creator: boolean;
 }
 
-export function markAsCreator(roomId: string) {
-    if (typeof window === "undefined") return;
-    const ids = getCreatedRoomIds();
-    if (!ids.includes(roomId)) {
-        ids.push(roomId);
-        localStorage.setItem(CREATOR_KEY, JSON.stringify(ids));
-    }
+type StoredRoomAccessMap = Record<string, StoredRoomAccess>;
+
+function readRoomAccessMap(): StoredRoomAccessMap {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.roomAccess);
+    return raw ? (JSON.parse(raw) as StoredRoomAccessMap) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRoomAccessMap(next: StoredRoomAccessMap) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.setItem(STORAGE_KEYS.roomAccess, JSON.stringify(next));
+}
+
+export function storeRoomAccess(roomId: string, accessToken: string, creator = false) {
+  const next = readRoomAccessMap();
+  next[roomId] = {
+    accessToken,
+    creator: creator || next[roomId]?.creator === true,
+  };
+  writeRoomAccessMap(next);
+}
+
+export function markAsCreator(roomId: string, accessToken: string) {
+  storeRoomAccess(roomId, accessToken, true);
+}
+
+export function getRoomAccessToken(roomId: string): string | null {
+  return readRoomAccessMap()[roomId]?.accessToken ?? null;
+}
+
+export function clearRoomAccess(roomId: string) {
+  const next = readRoomAccessMap();
+  if (!(roomId in next)) {
+    return;
+  }
+
+  delete next[roomId];
+  writeRoomAccessMap(next);
 }
 
 export function isRoomCreator(roomId: string): boolean {
-    return getCreatedRoomIds().includes(roomId);
+  return readRoomAccessMap()[roomId]?.creator === true;
 }

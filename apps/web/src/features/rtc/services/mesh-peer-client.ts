@@ -1,12 +1,12 @@
 "use client";
 
 import type {
-  PeerConnectionState,
   RtcAnswerPayload,
   RtcIceCandidatePayload,
   RtcOfferPayload,
 } from "@streamify/shared";
 
+import type { RtcSessionAdapter, RtcSessionAdapterOptions } from "../types";
 import {
   fromIceCandidateValue,
   fromSessionDescriptionValue,
@@ -14,47 +14,22 @@ import {
   toSessionDescriptionValue,
 } from "../utils/signal-mappers";
 
-interface MeshPeerClientOptions {
-  roomId: string;
-  selfUserId: string;
-  iceServers: RTCIceServer[];
-  localStream: MediaStream | null;
-  onRemoteStream: (userId: string, stream: MediaStream | null) => void;
-  onConnectionStateChange: (userId: string, state: PeerConnectionState) => void;
-  onSignalOffer: (payload: RtcOfferPayload) => void;
-  onSignalAnswer: (payload: RtcAnswerPayload) => void;
-  onIceCandidate: (payload: RtcIceCandidatePayload) => void;
-}
-
-export class MeshPeerClient {
+export class MeshPeerClient implements RtcSessionAdapter {
   private readonly peers = new Map<string, RTCPeerConnection>();
   private readonly remoteStreams = new Map<string, MediaStream>();
   private readonly pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
   private readonly senderKindMap = new WeakMap<RTCRtpSender, "audio" | "video">();
+  private readonly pendingNegotiations = new Set<string>();
+  private readonly negotiationTasks = new Map<string, Promise<void>>();
   private localStream: MediaStream | null;
 
-  constructor(private readonly options: MeshPeerClientOptions) {
+  constructor(private readonly options: RtcSessionAdapterOptions) {
     this.localStream = options.localStream;
   }
 
   async createOffer(targetUserId: string) {
-    const peer = this.ensurePeer(targetUserId);
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-
-    if (!peer.localDescription) {
-      return;
-    }
-
-    this.options.onSignalOffer({
-      roomId: this.options.roomId,
-      fromUserId: this.options.selfUserId,
-      toUserId: targetUserId,
-      description: toSessionDescriptionValue({
-        type: peer.localDescription.type,
-        sdp: peer.localDescription.sdp ?? undefined,
-      }),
-    });
+    this.pendingNegotiations.add(targetUserId);
+    await this.flushNegotiation(targetUserId);
   }
 
   async handleOffer(payload: RtcOfferPayload) {
@@ -82,12 +57,15 @@ export class MeshPeerClient {
         sdp: peer.localDescription.sdp ?? undefined,
       }),
     });
+
+    this.flushNegotiation(payload.fromUserId);
   }
 
   async handleAnswer(payload: RtcAnswerPayload) {
     const peer = this.ensurePeer(payload.fromUserId);
     await peer.setRemoteDescription(fromSessionDescriptionValue(payload.description));
     await this.flushPendingCandidates(payload.fromUserId);
+    this.flushNegotiation(payload.fromUserId);
   }
 
   async handleIceCandidate(payload: RtcIceCandidatePayload) {
@@ -107,8 +85,13 @@ export class MeshPeerClient {
   updateLocalStream(stream: MediaStream | null) {
     this.localStream = stream;
 
-    this.peers.forEach((peer) => {
-      this.syncPeerTracks(peer);
+    this.peers.forEach((peer, userId) => {
+      const requiresRenegotiation = this.syncPeerTracks(peer);
+
+      if (requiresRenegotiation) {
+        this.pendingNegotiations.add(userId);
+        this.flushNegotiation(userId);
+      }
     });
   }
 
@@ -123,6 +106,8 @@ export class MeshPeerClient {
     remoteStream?.getTracks().forEach((track) => track.stop());
     this.remoteStreams.delete(userId);
     this.pendingIceCandidates.delete(userId);
+    this.pendingNegotiations.delete(userId);
+    this.negotiationTasks.delete(userId);
     this.options.onRemoteStream(userId, null);
     this.options.onConnectionStateChange(userId, "closed");
   }
@@ -192,8 +177,10 @@ export class MeshPeerClient {
     const audioTrack = this.localStream?.getAudioTracks()[0] ?? null;
     const videoTrack = this.localStream?.getVideoTracks()[0] ?? null;
 
-    this.syncTrack(peer, "audio", audioTrack);
-    this.syncTrack(peer, "video", videoTrack);
+    const audioRenegotiation = this.syncTrack(peer, "audio", audioTrack);
+    const videoRenegotiation = this.syncTrack(peer, "video", videoTrack);
+
+    return audioRenegotiation || videoRenegotiation;
   }
 
   private syncTrack(
@@ -201,8 +188,6 @@ export class MeshPeerClient {
     kind: "audio" | "video",
     nextTrack: MediaStreamTrack | null,
   ) {
-    // Find sender by active track kind, OR by our own senderKindMap for
-    // senders whose track has been replaced with null.
     const sender = peer.getSenders().find(
       (candidate) =>
         candidate.track?.kind === kind ||
@@ -210,19 +195,68 @@ export class MeshPeerClient {
     );
 
     if (sender) {
-      // Skip if the sender already carries the exact same track reference
       if (sender.track === nextTrack) {
-        return;
+        return false;
       }
+
       this.senderKindMap.set(sender, kind);
       void sender.replaceTrack(nextTrack);
-      return;
+      return false;
     }
 
     if (nextTrack && this.localStream) {
       const newSender = peer.addTrack(nextTrack, this.localStream);
       this.senderKindMap.set(newSender, kind);
+      return true;
     }
+
+    return false;
+  }
+
+  private flushNegotiation(userId: string) {
+    const existingTask = this.negotiationTasks.get(userId);
+    if (existingTask) {
+      return existingTask;
+    }
+
+    const task = (async () => {
+      while (this.pendingNegotiations.has(userId)) {
+        const peer = this.ensurePeer(userId);
+
+        if (peer.signalingState !== "stable") {
+          return;
+        }
+
+        this.pendingNegotiations.delete(userId);
+
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+
+        if (!peer.localDescription) {
+          continue;
+        }
+
+        this.options.onSignalOffer({
+          roomId: this.options.roomId,
+          fromUserId: this.options.selfUserId,
+          toUserId: userId,
+          description: toSessionDescriptionValue({
+            type: peer.localDescription.type,
+            sdp: peer.localDescription.sdp ?? undefined,
+          }),
+        });
+      }
+    })().finally(() => {
+      this.negotiationTasks.delete(userId);
+
+      const peer = this.peers.get(userId);
+      if (this.pendingNegotiations.has(userId) && peer?.signalingState === "stable") {
+        void this.flushNegotiation(userId);
+      }
+    });
+
+    this.negotiationTasks.set(userId, task);
+    return task;
   }
 
   private async flushPendingCandidates(userId: string) {

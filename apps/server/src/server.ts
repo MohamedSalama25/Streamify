@@ -18,6 +18,13 @@ const rtcConfigService = new RtcConfigService();
 const roomService = new RoomService(new InMemoryRoomStore());
 const chatService = new ChatService();
 const userIdentityService = new UserIdentityService();
+const rtcConfiguration = rtcConfigService.getConfiguration();
+
+if (!rtcConfiguration.iceServers.some((server) => server.username && server.credential)) {
+  logger.warn(
+    "TURN is not configured. Hobby testing can still work, but some NAT/firewall combinations may fail to establish media connections.",
+  );
+}
 
 const app = createApp(rtcConfigService, roomService);
 const httpServer = createServer(app);

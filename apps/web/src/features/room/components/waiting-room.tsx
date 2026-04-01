@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { LoaderCircle, ShieldCheck, XCircle, ArrowLeft } from "lucide-react";
+import { ArrowLeft, ShieldCheck, XCircle } from "lucide-react";
 import { useI18n } from "@/shared/i18n";
-import { ROUTES } from "@/shared/constants/routes";
 
 export type WaitingRoomStatus = "waiting" | "rejected";
 
@@ -76,13 +74,14 @@ export function WaitingRoom({ roomId, displayName, status, onBack }: WaitingRoom
 
                                 {/* Cancel Request Button */}
                                 <div className="pt-4 flex justify-center">
-                                    <Link
-                                        href={ROUTES.home}
+                                    <button
+                                        type="button"
+                                        onClick={onBack}
                                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-red-500/10 border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white shadow-[0_0_15px_rgba(239,68,68,0.2)] transition-all duration-200"
                                     >
                                         <ArrowLeft className="h-3.5 w-3.5" />
                                         {t.session.cancelRequest}
-                                    </Link>
+                                    </button>
                                 </div>
                             </div>
 

@@ -9,6 +9,7 @@ import {
 } from "@streamify/shared";
 
 import type { AppSocket, AppSocketServer } from "../common/types/socket";
+import { logger } from "../common/logger/logger";
 import { getValidationMessage, safeParsePayload } from "../common/utils/schema";
 import type { ChatService } from "../features/chat/services/chat-service";
 import { registerChatHandlers } from "../features/chat/handlers/register-chat-handlers";
@@ -67,13 +68,11 @@ export function registerSocketHandlers({
       return;
     }
 
-    userIdentityService.normalize(parsed.data.user);
-    const roomId = roomService.createRoom();
+    const user = userIdentityService.normalize(parsed.data.user);
+    const result = roomService.createRoom(user);
     callback({
       ok: true,
-      data: {
-        roomId,
-      },
+      data: result,
     });
   });
 
@@ -99,9 +98,16 @@ export function registerSocketHandlers({
         roomId: parsed.data.roomId,
         user,
         socketId: socket.id,
+        accessToken: parsed.data.accessToken,
       });
 
-      console.log(`[Room] User ${user.displayName} joined room ${parsed.data.roomId}, isHost: ${result.participant.isHost}, socketId: ${socket.id}`);
+      logger.info("room.joined", {
+        roomId: parsed.data.roomId,
+        userId: user.userId,
+        displayName: user.displayName,
+        isHost: result.participant.isHost,
+        socketId: socket.id,
+      });
 
       socket.data.roomId = parsed.data.roomId;
       socket.data.userId = user.userId;
@@ -159,11 +165,12 @@ export function registerSocketHandlers({
       const user = userIdentityService.normalize(parsed.data.user);
       const roomId = parsed.data.roomId;
 
-      console.log(`[WaitingRoom] JOIN_REQUEST received from ${user.displayName} for room ${roomId}`);
-
       // Validate room exists
       if (!roomService.roomExists(roomId)) {
-        console.log(`[WaitingRoom] Room ${roomId} does not exist`);
+        logger.warn("waiting-room.join-request.missing-room", {
+          roomId,
+          userId: user.userId,
+        });
         callback({
           ok: false,
           error: { code: "ROOM_NOT_FOUND", message: "That room does not exist." },
@@ -172,21 +179,25 @@ export function registerSocketHandlers({
       }
 
       // Store the pending join request
-      roomService.addJoinRequest(roomId, user, socket.id);
+      const queuedRequest = roomService.addJoinRequest(roomId, user, socket.id);
 
       // Notify the host about the join request
       const hostSocketId = roomService.getHostSocketId(roomId);
-      console.log(`[WaitingRoom] Host socket ID for room ${roomId}: ${hostSocketId}`);
-      if (hostSocketId) {
+      if (hostSocketId && queuedRequest.created) {
         const hostSocket = io.sockets.sockets.get(hostSocketId);
-        console.log(`[WaitingRoom] Host socket found: ${!!hostSocket}, emitting JOIN_REQUEST_RECEIVED`);
         hostSocket?.emit(SOCKET_EVENTS.ROOM.JOIN_REQUEST_RECEIVED, {
           roomId,
           user,
         });
-      } else {
-        console.log(`[WaitingRoom] No host socket found for room ${roomId}`);
       }
+
+      logger.info("waiting-room.join-request.queued", {
+        roomId,
+        userId: user.userId,
+        socketId: socket.id,
+        created: queuedRequest.created,
+        hostSocketConnected: Boolean(hostSocketId),
+      });
 
       callback({
         ok: true,
@@ -219,7 +230,6 @@ export function registerSocketHandlers({
 
     try {
       const { roomId, userId } = parsed.data;
-      console.log(`[WaitingRoom] JOIN_REQUEST_CANCELLED received from ${userId} for room ${roomId}`);
 
       // Remove the pending request
       roomService.removePendingRequest(roomId, userId);
@@ -237,6 +247,11 @@ export function registerSocketHandlers({
       if (callback) {
         callback({ ok: true, data: { ok: true } });
       }
+
+      logger.info("waiting-room.join-request.cancelled", {
+        roomId,
+        userId,
+      });
     } catch (error) {
       const roomError = toPublicRoomError(error);
       if (callback) {
@@ -261,8 +276,12 @@ export function registerSocketHandlers({
 
     const { roomId, targetUserId, decision } = parsed.data;
 
-    // Verify the sender is the host
-    if (!socket.data.userId || !roomService.isRoomHost(roomId, socket.data.userId)) {
+    // Verify the sender is the active host of this room
+    if (
+      socket.data.roomId !== roomId ||
+      !socket.data.userId ||
+      !roomService.isRoomHost(roomId, socket.data.userId)
+    ) {
       callback?.({
         ok: false,
         error: { code: "INVALID_ROOM", message: "Only the host can accept or reject join requests." },
@@ -270,28 +289,47 @@ export function registerSocketHandlers({
       return;
     }
 
-    // Remove the pending request
-    const pendingReq = roomService.removePendingRequest(roomId, targetUserId);
-    if (!pendingReq) {
-      callback?.({
-        ok: false,
-        error: { code: "INVALID_ROOM", message: "No pending request found for that user." },
-      });
-      return;
-    }
-
-    const guestSocket = io.sockets.sockets.get(pendingReq.socketId);
-
     if (decision === "approved") {
-      // Notify the guest they are approved
+      const approvedRequest = roomService.approveJoinRequest(roomId, targetUserId);
+      if (!approvedRequest?.accessToken) {
+        callback?.({
+          ok: false,
+          error: { code: "INVALID_ROOM", message: "No pending request found for that user." },
+        });
+        return;
+      }
+
+      const guestSocket = io.sockets.sockets.get(approvedRequest.socketId);
       guestSocket?.emit(SOCKET_EVENTS.ROOM.JOIN_REQUEST_APPROVED, {
         roomId,
+        accessToken: approvedRequest.accessToken,
+      });
+
+      logger.info("waiting-room.join-response.approved", {
+        roomId,
+        targetUserId,
+        hostUserId: socket.data.userId,
       });
     } else {
-      // Notify the guest they are rejected
+      const pendingReq = roomService.removePendingRequest(roomId, targetUserId);
+      if (!pendingReq) {
+        callback?.({
+          ok: false,
+          error: { code: "INVALID_ROOM", message: "No pending request found for that user." },
+        });
+        return;
+      }
+
+      const guestSocket = io.sockets.sockets.get(pendingReq.socketId);
       guestSocket?.emit(SOCKET_EVENTS.ROOM.JOIN_REQUEST_REJECTED, {
         roomId,
         message: "The host declined your request to join.",
+      });
+
+      logger.info("waiting-room.join-response.rejected", {
+        roomId,
+        targetUserId,
+        hostUserId: socket.data.userId,
       });
     }
 
@@ -330,6 +368,13 @@ export function registerSocketHandlers({
     socket.data.roomId = undefined;
     socket.data.userId = undefined;
 
+    logger.info("room.left", {
+      roomId: parsed.data.roomId,
+      userId: parsed.data.userId,
+      socketId: socket.id,
+      hadResult: Boolean(result),
+    });
+
     if (result) {
       io.to(parsed.data.roomId).emit(SOCKET_EVENTS.PRESENCE.USER_LEFT, {
         roomId: parsed.data.roomId,
@@ -355,6 +400,11 @@ export function registerSocketHandlers({
     // Clean up pending join requests on disconnect
     const removedPending = roomService.removePendingBySocket(socket.id);
     if (removedPending) {
+      logger.info("waiting-room.join-request.disconnected", {
+        roomId: removedPending.roomId,
+        userId: removedPending.userId,
+        socketId: socket.id,
+      });
       const hostSocketId = roomService.getHostSocketId(removedPending.roomId);
       if (hostSocketId) {
         const hostSocket = io.sockets.sockets.get(hostSocketId);
@@ -369,6 +419,12 @@ export function registerSocketHandlers({
     if (!result) {
       return;
     }
+
+    logger.info("room.disconnected", {
+      roomId: result.roomId,
+      userId: result.userId,
+      socketId: socket.id,
+    });
 
     io.to(result.roomId).emit(SOCKET_EVENTS.PRESENCE.USER_LEFT, {
       roomId: result.roomId,

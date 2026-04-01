@@ -27,9 +27,11 @@ import {
   leaveRoomRequest,
 } from "@/features/room/services/room-socket-service";
 import { useRoomStore } from "@/features/room/store/room-store";
+import { clearRoomAccess } from "@/features/room/utils/room-creator-store";
+import { createRtcSessionAdapter } from "@/features/rtc/services/create-rtc-session-adapter";
 import { fetchRtcConfiguration } from "@/features/rtc/services/rtc-config-service";
 import { LocalMediaManager } from "@/features/rtc/services/local-media-manager";
-import { MeshPeerClient } from "@/features/rtc/services/mesh-peer-client";
+import type { RtcSessionAdapter } from "@/features/rtc/types";
 import { ROUTES } from "@/shared/constants/routes";
 import { clientEnv } from "@/shared/lib/env";
 import { disconnectSocket, getSocket } from "@/shared/lib/socket";
@@ -43,13 +45,32 @@ interface UseRoomSessionResult {
   toggleScreenShare: () => Promise<void>;
 }
 
-export function useRoomSession(roomId: string, identity: UserIdentity, initialMedia?: { mic: boolean; cam: boolean; screen: boolean }): UseRoomSessionResult {
+function shouldClearRoomAccess(error: RoomErrorPayload) {
+  return (
+    error.code === "INVALID_ROOM" ||
+    error.code === "ROOM_NOT_FOUND" ||
+    error.code === "JOIN_REJECTED"
+  );
+}
+
+export function useRoomSession(
+  roomId: string,
+  identity: UserIdentity,
+  accessToken: string,
+  initialMedia?: { mic: boolean; cam: boolean; screen: boolean },
+): UseRoomSessionResult {
   const router = useRouter();
   const { state, dispatch } = useRoomStore();
   const socket = useMemo(() => getSocket(), []);
-  const meshRef = useRef<MeshPeerClient | null>(null);
+  const rtcSessionRef = useRef<RtcSessionAdapter | null>(null);
   const mediaManagerRef = useRef<LocalMediaManager | null>(null);
   const hasLeftRoomRef = useRef(false);
+  const hasJoinedRoomRef = useRef(false);
+  const joinInFlightRef = useRef<Promise<void> | null>(null);
+  const disposedRef = useRef(false);
+  const rtcIceServersRef = useRef<RTCIceServer[] | null>(null);
+  const initialMediaAppliedRef = useRef(false);
+  const lastRoomErrorRef = useRef<RoomErrorPayload | null>(null);
 
   const syncLocalMedia = useCallback(
     (mediaState: ParticipantMediaState) => {
@@ -76,7 +97,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
         },
       });
 
-      meshRef.current?.updateLocalStream(outgoingStream);
+      rtcSessionRef.current?.updateLocalStream(outgoingStream);
 
       if (socket.connected) {
         emitMediaState(socket, {
@@ -89,23 +110,150 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
     [dispatch, identity.userId, roomId, socket],
   );
 
+  const createRtcSession = useCallback(
+    (iceServers: RTCIceServer[], localStream: MediaStream | null) => {
+      rtcSessionRef.current?.destroy();
+      rtcSessionRef.current = createRtcSessionAdapter({
+        roomId,
+        selfUserId: identity.userId,
+        iceServers,
+        localStream,
+        onRemoteStream: (userId, stream) => {
+          dispatch({
+            type: "participants/set-stream",
+            payload: {
+              userId,
+              stream,
+            },
+          });
+        },
+        onConnectionStateChange: (userId, connectionState) => {
+          dispatch({
+            type: "participants/set-connection-state",
+            payload: {
+              userId,
+              connectionState,
+            },
+          });
+
+          if (socket.connected) {
+            socket.emit(SOCKET_EVENTS.RTC.CONNECTION_STATE, {
+              roomId,
+              fromUserId: identity.userId,
+              toUserId: userId,
+              state: connectionState,
+            });
+          }
+        },
+        onSignalOffer: (payload) => socket.emit(SOCKET_EVENTS.RTC.OFFER, payload),
+        onSignalAnswer: (payload) => socket.emit(SOCKET_EVENTS.RTC.ANSWER, payload),
+        onIceCandidate: (payload) => socket.emit(SOCKET_EVENTS.RTC.ICE_CANDIDATE, payload),
+      });
+    },
+    [dispatch, identity.userId, roomId, socket],
+  );
+
+  const joinActiveRoom = useCallback(
+    async (rebuildMesh = false) => {
+      if (hasLeftRoomRef.current) {
+        return;
+      }
+
+      if (joinInFlightRef.current) {
+        return joinInFlightRef.current;
+      }
+
+      joinInFlightRef.current = (async () => {
+        const mediaManager = mediaManagerRef.current;
+        if (!mediaManager) {
+          return;
+        }
+
+        lastRoomErrorRef.current = null;
+
+        if (rebuildMesh) {
+          createRtcSession(
+            rtcIceServersRef.current ?? [],
+            mediaManager.getOutgoingStream(),
+          );
+        }
+
+        dispatch({ type: "session/set-status", payload: "joining" });
+
+        const joinedRoom = await joinRoomRequest(socket, {
+          roomId,
+          user: identity,
+          accessToken,
+        });
+
+        if (disposedRef.current || hasLeftRoomRef.current) {
+          return;
+        }
+
+        hasJoinedRoomRef.current = true;
+        dispatch({ type: "participants/set", payload: joinedRoom.participants });
+        dispatch({ type: "session/set-room-error", payload: null });
+        dispatch({ type: "session/set-status", payload: "connected" });
+        dispatch({ type: "session/set-socket-connected", payload: socket.connected });
+
+        syncLocalMedia(mediaManager.getMediaState());
+
+        socket.emit(SOCKET_EVENTS.RTC.PEER_READY, {
+          roomId,
+          user: identity,
+        });
+      })().catch((error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : "Unable to join the room.";
+
+        if (lastRoomErrorRef.current?.message !== message) {
+          dispatch({
+            type: "session/set-room-error",
+            payload: {
+              code: "SERVER_ERROR",
+              message,
+            },
+          });
+          toast.error(message);
+        }
+
+        dispatch({ type: "session/set-status", payload: "error" });
+      }).finally(() => {
+        joinInFlightRef.current = null;
+      });
+
+      return joinInFlightRef.current;
+    },
+    [accessToken, createRtcSession, dispatch, identity, roomId, socket, syncLocalMedia],
+  );
+
   useEffect(() => {
+    disposedRef.current = false;
     hasLeftRoomRef.current = false;
+    hasJoinedRoomRef.current = false;
     dispatch({ type: "session/set-current-user", payload: identity });
     dispatch({ type: "session/set-status", payload: "preparing" });
 
     const mediaManager = new LocalMediaManager();
     mediaManagerRef.current = mediaManager;
 
-    let disposed = false;
-
     const handleSocketConnect = () => {
       dispatch({ type: "session/set-socket-connected", payload: true });
+
+      if (hasJoinedRoomRef.current && !hasLeftRoomRef.current) {
+        void joinActiveRoom(true);
+      }
     };
     const handleSocketDisconnect = () => {
       dispatch({ type: "session/set-socket-connected", payload: false });
     };
     const handleRoomError = (error: RoomErrorPayload) => {
+      lastRoomErrorRef.current = error;
+
+      if (shouldClearRoomAccess(error)) {
+        clearRoomAccess(roomId);
+      }
+
       dispatch({ type: "session/set-room-error", payload: error });
       toast.error(error.message);
     };
@@ -117,7 +265,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
       toast.success(`${payload.participant.displayName} joined the room.`);
     };
     const handleUserLeft = (payload: PresenceUserLeftPayload) => {
-      meshRef.current?.removePeer(payload.userId);
+      rtcSessionRef.current?.removePeer(payload.userId);
       dispatch({ type: "participants/remove", payload: { userId: payload.userId } });
       toast.message(`${payload.displayName} left the room.`);
     };
@@ -129,28 +277,28 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
         return;
       }
 
-      await meshRef.current?.createOffer(payload.user.userId);
+      await rtcSessionRef.current?.createOffer(payload.user.userId);
     };
     const handleOffer = (payload: RtcOfferPayload) => {
       if (payload.toUserId !== identity.userId) {
         return;
       }
 
-      void meshRef.current?.handleOffer(payload);
+      void rtcSessionRef.current?.handleOffer(payload);
     };
     const handleAnswer = (payload: RtcAnswerPayload) => {
       if (payload.toUserId !== identity.userId) {
         return;
       }
 
-      void meshRef.current?.handleAnswer(payload);
+      void rtcSessionRef.current?.handleAnswer(payload);
     };
     const handleIceCandidate = (payload: RtcIceCandidatePayload) => {
       if (payload.toUserId !== identity.userId) {
         return;
       }
 
-      void meshRef.current?.handleIceCandidate(payload);
+      void rtcSessionRef.current?.handleIceCandidate(payload);
     };
     const handleRemoteConnectionState = (payload: RtcConnectionStatePayload) => {
       if (payload.toUserId !== identity.userId) {
@@ -166,6 +314,19 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
       });
     };
 
+    socket.on("connect", handleSocketConnect);
+    socket.on("disconnect", handleSocketDisconnect);
+    socket.on(SOCKET_EVENTS.ROOM.ERROR, handleRoomError);
+    socket.on(SOCKET_EVENTS.ROOM.PARTICIPANTS, handleParticipants);
+    socket.on(SOCKET_EVENTS.PRESENCE.USER_JOINED, handleUserJoined);
+    socket.on(SOCKET_EVENTS.PRESENCE.USER_LEFT, handleUserLeft);
+    socket.on(SOCKET_EVENTS.CHAT.NEW_MESSAGE, handleChatMessage);
+    socket.on(SOCKET_EVENTS.RTC.PEER_READY, handlePeerReady);
+    socket.on(SOCKET_EVENTS.RTC.OFFER, handleOffer);
+    socket.on(SOCKET_EVENTS.RTC.ANSWER, handleAnswer);
+    socket.on(SOCKET_EVENTS.RTC.ICE_CANDIDATE, handleIceCandidate);
+    socket.on(SOCKET_EVENTS.RTC.CONNECTION_STATE, handleRemoteConnectionState);
+
     const bootstrapRoom = async () => {
       try {
         const [rtcConfig, mediaBootstrap] = await Promise.all([
@@ -173,18 +334,22 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
           mediaManager.initialize(),
         ]);
 
-        if (disposed) {
+        if (disposedRef.current) {
           return;
         }
+
+        rtcIceServersRef.current = rtcConfig.iceServers as RTCIceServer[];
 
         if (mediaBootstrap.error) {
           dispatch({ type: "session/set-media-error", payload: mediaBootstrap.error });
           toast.warning(mediaBootstrap.error);
         }
 
-        if (initialMedia) {
+        if (!initialMediaAppliedRef.current && initialMedia) {
+          initialMediaAppliedRef.current = true;
+
           if (!initialMedia.mic && mediaManager.getMediaState().microphoneEnabled) {
-            mediaManager.toggleMicrophone();
+            await mediaManager.toggleMicrophone();
           }
           if (!initialMedia.cam && mediaManager.getMediaState().cameraEnabled) {
             await mediaManager.toggleCamera();
@@ -196,53 +361,18 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
           }
         }
 
-        const currentPreview = mediaManager.getPreviewStream();
-        const currentOutgoing = mediaManager.getOutgoingStream();
-
         dispatch({
           type: "participants/set-stream",
           payload: {
             userId: identity.userId,
-            stream: currentPreview,
+            stream: mediaManager.getPreviewStream(),
           },
         });
 
-        meshRef.current = new MeshPeerClient({
-          roomId,
-          selfUserId: identity.userId,
-          iceServers: rtcConfig.iceServers as RTCIceServer[],
-          localStream: currentOutgoing,
-          onRemoteStream: (userId, stream) => {
-            dispatch({
-              type: "participants/set-stream",
-              payload: {
-                userId,
-                stream,
-              },
-            });
-          },
-          onConnectionStateChange: (userId, connectionState) => {
-            dispatch({
-              type: "participants/set-connection-state",
-              payload: {
-                userId,
-                connectionState,
-              },
-            });
-
-            if (socket.connected) {
-              socket.emit(SOCKET_EVENTS.RTC.CONNECTION_STATE, {
-                roomId,
-                fromUserId: identity.userId,
-                toUserId: userId,
-                state: connectionState,
-              });
-            }
-          },
-          onSignalOffer: (payload) => socket.emit(SOCKET_EVENTS.RTC.OFFER, payload),
-          onSignalAnswer: (payload) => socket.emit(SOCKET_EVENTS.RTC.ANSWER, payload),
-          onIceCandidate: (payload) => socket.emit(SOCKET_EVENTS.RTC.ICE_CANDIDATE, payload),
-        });
+        createRtcSession(
+          rtcIceServersRef.current,
+          mediaManager.getOutgoingStream(),
+        );
 
         mediaManager.onScreenShareEnded = () => {
           const nextState = mediaManager.getMediaState();
@@ -253,39 +383,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
           });
         };
 
-        socket.on("connect", handleSocketConnect);
-        socket.on("disconnect", handleSocketDisconnect);
-        socket.on(SOCKET_EVENTS.ROOM.ERROR, handleRoomError);
-        socket.on(SOCKET_EVENTS.ROOM.PARTICIPANTS, handleParticipants);
-        socket.on(SOCKET_EVENTS.PRESENCE.USER_JOINED, handleUserJoined);
-        socket.on(SOCKET_EVENTS.PRESENCE.USER_LEFT, handleUserLeft);
-        socket.on(SOCKET_EVENTS.CHAT.NEW_MESSAGE, handleChatMessage);
-        socket.on(SOCKET_EVENTS.RTC.PEER_READY, handlePeerReady);
-        socket.on(SOCKET_EVENTS.RTC.OFFER, handleOffer);
-        socket.on(SOCKET_EVENTS.RTC.ANSWER, handleAnswer);
-        socket.on(SOCKET_EVENTS.RTC.ICE_CANDIDATE, handleIceCandidate);
-        socket.on(SOCKET_EVENTS.RTC.CONNECTION_STATE, handleRemoteConnectionState);
-
-        dispatch({ type: "session/set-status", payload: "joining" });
-        const joinedRoom = await joinRoomRequest(socket, {
-          roomId,
-          user: identity,
-        });
-
-        if (disposed) {
-          return;
-        }
-
-        dispatch({ type: "participants/set", payload: joinedRoom.participants });
-        dispatch({ type: "session/set-room-error", payload: null });
-        dispatch({ type: "session/set-status", payload: "connected" });
-        dispatch({ type: "session/set-socket-connected", payload: socket.connected });
-        syncLocalMedia(mediaManager.getMediaState());
-
-        socket.emit(SOCKET_EVENTS.RTC.PEER_READY, {
-          roomId,
-          user: identity,
-        });
+        await joinActiveRoom(false);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unable to join the room.";
@@ -304,7 +402,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
     void bootstrapRoom();
 
     return () => {
-      disposed = true;
+      disposedRef.current = true;
       socket.off("connect", handleSocketConnect);
       socket.off("disconnect", handleSocketDisconnect);
       socket.off(SOCKET_EVENTS.ROOM.ERROR, handleRoomError);
@@ -317,13 +415,23 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
       socket.off(SOCKET_EVENTS.RTC.ANSWER, handleAnswer);
       socket.off(SOCKET_EVENTS.RTC.ICE_CANDIDATE, handleIceCandidate);
       socket.off(SOCKET_EVENTS.RTC.CONNECTION_STATE, handleRemoteConnectionState);
-      meshRef.current?.destroy();
-      meshRef.current = null;
+      rtcSessionRef.current?.destroy();
+      rtcSessionRef.current = null;
       mediaManagerRef.current?.dispose();
       mediaManagerRef.current = null;
       disconnectSocket();
     };
-  }, [dispatch, identity, roomId, socket, syncLocalMedia]);
+  }, [
+    accessToken,
+    createRtcSession,
+    dispatch,
+    identity,
+    initialMedia,
+    joinActiveRoom,
+    roomId,
+    socket,
+    syncLocalMedia,
+  ]);
 
   useEffect(() => {
     const activeScreenShare = Object.values(state.participants).find(
@@ -352,6 +460,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
     }
 
     hasLeftRoomRef.current = true;
+    clearRoomAccess(roomId);
 
     try {
       await leaveRoomRequest(socket, {
@@ -362,7 +471,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
       // Ignore explicit leave errors; disconnect cleanup still runs.
     }
 
-    meshRef.current?.destroy();
+    rtcSessionRef.current?.destroy();
     mediaManagerRef.current?.dispose();
     disconnectSocket();
     router.push(ROUTES.home);
@@ -386,7 +495,7 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
     }
 
     try {
-      const mediaState = mediaManager.toggleMicrophone();
+      const mediaState = await mediaManager.toggleMicrophone();
       syncLocalMedia(mediaState);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to toggle microphone.");

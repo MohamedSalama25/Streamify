@@ -2,6 +2,7 @@ import type {
   ParticipantMediaState,
   RoomErrorCode,
   RoomErrorPayload,
+  RoomCreateResponse,
   RoomJoinedPayload,
   RoomParticipant,
   UserIdentity,
@@ -9,6 +10,15 @@ import type {
 
 export interface RoomParticipantRecord extends RoomParticipant {
   socketId: string;
+  accessToken: string;
+}
+
+export interface RoomAccessGrant {
+  userId: string;
+  displayName: string;
+  accessToken: string;
+  issuedAt: string;
+  claimedAt: string | null;
 }
 
 export interface PendingJoinRequest {
@@ -16,11 +26,14 @@ export interface PendingJoinRequest {
   displayName: string;
   socketId: string;
   requestedAt: string;
+  approvedAt: string | null;
+  accessToken: string | null;
 }
 
 export interface RoomRecord {
   roomId: string;
   createdAt: string;
+  hostReservation: RoomAccessGrant;
   participants: Map<string, RoomParticipantRecord>;
   pendingJoinRequests: Map<string, PendingJoinRequest>;
 }
@@ -29,10 +42,18 @@ export interface JoinRoomParams {
   roomId: string;
   user: UserIdentity;
   socketId: string;
+  accessToken: string;
 }
 
 export interface JoinRoomResult extends RoomJoinedPayload {
   replacedSocketId?: string;
+}
+
+export type CreateRoomResult = RoomCreateResponse;
+
+export interface QueueJoinRequestResult {
+  request: PendingJoinRequest;
+  created: boolean;
 }
 
 export interface LeaveRoomResult {
@@ -77,4 +98,3 @@ export function normalizeRoomError(error: unknown): RoomErrorPayload {
 
   return createRoomError("SERVER_ERROR", "Something went wrong on the server.");
 }
-
