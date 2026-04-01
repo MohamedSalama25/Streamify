@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Mic, Shield, Monitor, Video } from "lucide-react";
+import { ArrowRight, LoaderCircle, Mic, Shield, Monitor, Video } from "lucide-react";
 
 import { usePersistentIdentity } from "@/features/auth/hooks/use-persistent-identity";
 import { IdentityForm } from "@/features/auth/components/identity-form";
@@ -16,7 +16,7 @@ export function HomeHero() {
   const { identity, upsertIdentity } = usePersistentIdentity();
   const [displayName, setDisplayName] = useState(identity?.displayName ?? "");
   const [roomId, setRoomId] = useState("");
-  const { isPending, handleCreateRoom, handleJoinRoom } = useHomeActions({
+  const { isCreatingRoom, isBusy, handleCreateRoom, handleJoinRoom } = useHomeActions({
     displayName,
     roomId,
     upsertIdentity,
@@ -121,10 +121,14 @@ export function HomeHero() {
                 type="button"
                 size="lg"
                 onClick={() => void handleCreateRoom()}
-                disabled={isPending}
+                disabled={isBusy}
                 className="w-full"
               >
-                <Video className="h-4 w-4" />
+                {isCreatingRoom ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Video className="h-4 w-4" />
+                )}
                 {t.session.createRoom}
               </Button>
 
@@ -154,7 +158,7 @@ export function HomeHero() {
                   size="lg"
                   variant="secondary"
                   onClick={handleJoinRoom}
-                  disabled={isPending}
+                  disabled={isBusy}
                   className="w-full"
                 >
                   {t.session.joinSession}

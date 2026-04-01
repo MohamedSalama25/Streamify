@@ -196,7 +196,6 @@ export function useRoomSession(roomId: string, identity: UserIdentity, initialMe
           }
         }
 
-        const currentMediaState = mediaManager.getMediaState();
         const currentPreview = mediaManager.getPreviewStream();
         const currentOutgoing = mediaManager.getOutgoingStream();
 

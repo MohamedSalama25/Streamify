@@ -1,18 +1,51 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export function useMediaStream(stream: MediaStream | null) {
   const mediaRef = useRef<HTMLVideoElement | null>(null);
 
+  const attachMediaRef = useCallback(
+    (node: HTMLVideoElement | null) => {
+      if (mediaRef.current && mediaRef.current !== node) {
+        mediaRef.current.srcObject = null;
+      }
+
+      mediaRef.current = node;
+
+      if (!node) {
+        return;
+      }
+
+      if (node.srcObject !== stream) {
+        node.srcObject = stream;
+      }
+
+      if (stream) {
+        void node.play().catch(() => {
+          // Autoplay can be interrupted during rapid mount/unmount cycles.
+        });
+      }
+    },
+    [stream],
+  );
+
   useEffect(() => {
-    if (!mediaRef.current) {
+    const mediaElement = mediaRef.current;
+    if (!mediaElement) {
       return;
     }
 
-    mediaRef.current.srcObject = stream;
+    if (mediaElement.srcObject !== stream) {
+      mediaElement.srcObject = stream;
+    }
+
+    if (stream) {
+      void mediaElement.play().catch(() => {
+        // The browser may delay playback until metadata is ready.
+      });
+    }
   }, [stream]);
 
-  return mediaRef;
+  return attachMediaRef;
 }
-

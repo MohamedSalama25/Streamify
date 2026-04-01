@@ -16,21 +16,23 @@ import {
   type SocketAck,
 } from "@streamify/shared";
 
-import type { StreamifySocket } from "@/shared/lib/socket";
+import { ensureSignalingServerReady, type StreamifySocket } from "@/shared/lib/socket";
 
 async function connectSocket(socket: StreamifySocket) {
   if (socket.connected) {
     return;
   }
 
+  await ensureSignalingServerReady();
+
   await new Promise<void>((resolve, reject) => {
     const handleConnect = () => {
       cleanup();
       resolve();
     };
-    const handleError = () => {
+    const handleError = (error: Error) => {
       cleanup();
-      reject(new Error("Unable to connect to the signaling server."));
+      reject(new Error(error.message || "Unable to connect to the signaling server."));
     };
     const cleanup = () => {
       socket.off("connect", handleConnect);
@@ -139,4 +141,3 @@ export function emitMediaState(socket: StreamifySocket, payload: PresenceMediaSt
 export function emitScreenShare(socket: StreamifySocket, active: boolean, payload: ScreenSharePayload) {
   socket.emit(active ? SOCKET_EVENTS.SCREEN.START : SOCKET_EVENTS.SCREEN.STOP, payload);
 }
-

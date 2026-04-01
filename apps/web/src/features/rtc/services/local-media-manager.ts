@@ -124,22 +124,36 @@ export class LocalMediaManager {
   }
 
   async toggleCamera() {
-    if (this._cameraEnabled && this.cameraTrack) {
-      // Turning camera OFF: stop the track entirely so remote peers
-      // receive replaceTrack(null) and stop showing stale frames.
-      this.cameraTrack.stop();
-      this.cameraTrack = null;
+    if (this._cameraEnabled) {
+      // Keep the same camera track alive and simply pause it. Replacing a
+      // stopped track with a fresh one can leave remote peers on a dead
+      // receiver track in some browsers, which shows up as a black tile.
+      if (this.cameraTrack?.readyState === "live") {
+        this.cameraTrack.enabled = false;
+      }
       this._cameraEnabled = false;
-    } else {
-      // Turning camera ON: acquire a fresh track so remote peers
-      // receive replaceTrack(newTrack) and properly render video.
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        this.cameraTrack = stream.getVideoTracks()[0] ?? null;
-        this._cameraEnabled = !!this.cameraTrack;
-      } catch {
+      return this.getMediaState();
+    }
+
+    if (this.cameraTrack?.readyState === "live") {
+      this.cameraTrack.enabled = true;
+      this._cameraEnabled = true;
+      return this.getMediaState();
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const nextCameraTrack = stream.getVideoTracks()[0] ?? null;
+
+      if (!nextCameraTrack) {
         throw new Error("Camera is unavailable.");
       }
+
+      this.cameraTrack?.stop();
+      this.cameraTrack = nextCameraTrack;
+      this._cameraEnabled = true;
+    } catch {
+      throw new Error("Camera is unavailable.");
     }
 
     return this.getMediaState();

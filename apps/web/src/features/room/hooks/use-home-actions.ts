@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { displayNameSchema, roomIdSchema } from "@streamify/shared";
 import { toast } from "sonner";
 
@@ -24,8 +24,11 @@ export function useHomeActions({
 }: UseHomeActionsOptions) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<"create" | "join" | null>(null);
 
   async function handleCreateRoom() {
+    setPendingAction("create");
+
     try {
       const normalizedDisplayName = displayNameSchema.parse(displayName);
       const identity = upsertIdentity(normalizedDisplayName);
@@ -41,11 +44,14 @@ export function useHomeActions({
         router.push(ROUTES.room(result.roomId));
       });
     } catch (error) {
+      setPendingAction(null);
       toast.error(error instanceof Error ? error.message : "Unable to create a room.");
     }
   }
 
   function handleJoinRoom() {
+    setPendingAction("join");
+
     try {
       const normalizedDisplayName = displayNameSchema.parse(displayName);
       const normalizedRoomId = roomIdSchema.parse(roomId);
@@ -55,14 +61,16 @@ export function useHomeActions({
         router.push(ROUTES.room(normalizedRoomId));
       });
     } catch (error) {
+      setPendingAction(null);
       toast.error(error instanceof Error ? error.message : "Unable to join that room.");
     }
   }
 
   return {
     isPending,
+    isCreatingRoom: pendingAction === "create",
+    isBusy: pendingAction !== null || isPending,
     handleCreateRoom,
     handleJoinRoom,
   };
 }
-

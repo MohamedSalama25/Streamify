@@ -1,13 +1,11 @@
 "use client";
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { LoaderCircle, Maximize, MicOff, Minimize, MonitorUp, Pin, VideoOff } from "lucide-react";
+import { LoaderCircle, Maximize, MicOff, Minimize, Pin } from "lucide-react";
 
 import type { ParticipantViewModel } from "@/features/room/types/room-state";
 import type { UserIdentity } from "@streamify/shared";
 import { useMediaStream } from "@/features/rtc/hooks/use-media-stream";
-import { Avatar, AvatarFallback } from "@/features/ui/components/avatar";
-import { Badge } from "@/features/ui/components/badge";
 import { Button } from "@/features/ui/components/button";
 import { cn } from "@/shared/lib/cn";
 import { getParticipantInitials } from "@/features/participants/utils/participant-display";
@@ -179,5 +177,4 @@ export const VideoTile = memo(function VideoTile({
     </div>
   );
 });
-
 
