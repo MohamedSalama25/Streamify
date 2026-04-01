@@ -9,6 +9,7 @@ import {
   type PresenceUserJoinedPayload,
   type PresenceUserLeftPayload,
   type RoomErrorPayload,
+  type RoomParticipant,
   type RoomParticipantsPayload,
   type RtcAnswerPayload,
   type RtcConnectionStatePayload,
@@ -32,6 +33,7 @@ import { createRtcSessionAdapter } from "@/features/rtc/services/create-rtc-sess
 import { fetchRtcConfiguration } from "@/features/rtc/services/rtc-config-service";
 import { LocalMediaManager } from "@/features/rtc/services/local-media-manager";
 import type { RtcSessionAdapter } from "@/features/rtc/types";
+import { logRtcEvent } from "@/features/rtc/utils/rtc-logger";
 import { ROUTES } from "@/shared/constants/routes";
 import { clientEnv } from "@/shared/lib/env";
 import { disconnectSocket, getSocket } from "@/shared/lib/socket";
@@ -43,6 +45,14 @@ interface UseRoomSessionResult {
   toggleMicrophone: () => Promise<void>;
   toggleCamera: () => Promise<void>;
   toggleScreenShare: () => Promise<void>;
+}
+
+const PEER_RETRY_INTERVAL_MS = 2_500;
+const PEER_RECONCILE_DEBOUNCE_MS = 250;
+const PERIODIC_RECONCILE_MS = 4_000;
+
+function shouldInitiateOffer(selfUserId: string, remoteUserId: string) {
+  return selfUserId.localeCompare(remoteUserId) < 0;
 }
 
 function shouldClearRoomAccess(error: RoomErrorPayload) {
@@ -71,6 +81,103 @@ export function useRoomSession(
   const rtcIceServersRef = useRef<RTCIceServer[] | null>(null);
   const initialMediaAppliedRef = useRef(false);
   const lastRoomErrorRef = useRef<RoomErrorPayload | null>(null);
+  const roomParticipantsRef = useRef<RoomParticipant[]>([]);
+  const reconcileTimeoutRef = useRef<number | null>(null);
+  const lastBootstrapAttemptRef = useRef(new Map<string, number>());
+
+  const setKnownParticipants = useCallback((participants: RoomParticipant[]) => {
+    roomParticipantsRef.current = participants;
+
+    const knownParticipantIds = new Set(participants.map((participant) => participant.userId));
+    lastBootstrapAttemptRef.current.forEach((_, userId) => {
+      if (!knownParticipantIds.has(userId)) {
+        lastBootstrapAttemptRef.current.delete(userId);
+      }
+    });
+  }, []);
+
+  const reconcilePeers = useCallback(
+    async (reason: string, nextParticipants?: RoomParticipant[]) => {
+      const rtcSession = rtcSessionRef.current;
+      if (!rtcSession) {
+        return;
+      }
+
+      const participants = nextParticipants ?? roomParticipantsRef.current;
+      const expectedPeers = participants.filter((participant) => participant.userId !== identity.userId);
+      const expectedPeerIds = new Set(expectedPeers.map((participant) => participant.userId));
+
+      for (const peerUserId of rtcSession.listPeerUserIds()) {
+        if (!expectedPeerIds.has(peerUserId)) {
+          rtcSession.removePeer(peerUserId);
+        }
+      }
+
+      const now = Date.now();
+
+      for (const participant of expectedPeers) {
+        const remoteUserId = participant.userId;
+        const shouldInitiate = shouldInitiateOffer(identity.userId, remoteUserId);
+        const hasPeer = rtcSession.hasPeerConnection(remoteUserId);
+        const connectionState = rtcSession.getConnectionState(remoteUserId);
+        const lastAttemptAt = lastBootstrapAttemptRef.current.get(remoteUserId) ?? 0;
+        const retryDue = now - lastAttemptAt >= PEER_RETRY_INTERVAL_MS;
+        const needsRecovery =
+          !hasPeer ||
+          connectionState === "failed" ||
+          connectionState === "closed" ||
+          (shouldInitiate && retryDue && connectionState === "new") ||
+          (shouldInitiate && retryDue && connectionState === "disconnected");
+
+        if (!needsRecovery) {
+          if (connectionState === "connected") {
+            lastBootstrapAttemptRef.current.delete(remoteUserId);
+          }
+          continue;
+        }
+
+        if (connectionState === "failed" || connectionState === "closed") {
+          rtcSession.removePeer(remoteUserId);
+        }
+
+        logRtcEvent("missing-peer-reconciliation", {
+          roomId,
+          selfUserId: identity.userId,
+          targetUserId: remoteUserId,
+          reason,
+          hasPeer,
+          connectionState,
+          shouldInitiate,
+        });
+
+        if (!shouldInitiate || !retryDue) {
+          continue;
+        }
+
+        lastBootstrapAttemptRef.current.set(remoteUserId, now);
+        await rtcSession.createOffer(remoteUserId);
+      }
+    },
+    [identity.userId, roomId],
+  );
+
+  const schedulePeerReconciliation = useCallback(
+    (reason: string, nextParticipants?: RoomParticipant[]) => {
+      if (nextParticipants) {
+        setKnownParticipants(nextParticipants);
+      }
+
+      if (reconcileTimeoutRef.current !== null) {
+        window.clearTimeout(reconcileTimeoutRef.current);
+      }
+
+      reconcileTimeoutRef.current = window.setTimeout(() => {
+        reconcileTimeoutRef.current = null;
+        void reconcilePeers(reason, nextParticipants);
+      }, PEER_RECONCILE_DEBOUNCE_MS);
+    },
+    [reconcilePeers, setKnownParticipants],
+  );
 
   const syncLocalMedia = useCallback(
     (mediaState: ParticipantMediaState) => {
@@ -191,6 +298,7 @@ export function useRoomSession(
         }
 
         hasJoinedRoomRef.current = true;
+        setKnownParticipants(joinedRoom.participants);
         dispatch({ type: "participants/set", payload: joinedRoom.participants });
         dispatch({ type: "session/set-room-error", payload: null });
         dispatch({ type: "session/set-status", payload: "connected" });
@@ -198,10 +306,16 @@ export function useRoomSession(
 
         syncLocalMedia(mediaManager.getMediaState());
 
+        logRtcEvent("peer-ready-sent", {
+          roomId,
+          userId: identity.userId,
+          reason: rebuildMesh ? "rejoin" : "join",
+        });
         socket.emit(SOCKET_EVENTS.RTC.PEER_READY, {
           roomId,
           user: identity,
         });
+        schedulePeerReconciliation("room-joined", joinedRoom.participants);
       })().catch((error: unknown) => {
         const message =
           error instanceof Error ? error.message : "Unable to join the room.";
@@ -224,7 +338,7 @@ export function useRoomSession(
 
       return joinInFlightRef.current;
     },
-    [accessToken, createRtcSession, dispatch, identity, roomId, socket, syncLocalMedia],
+    [accessToken, createRtcSession, dispatch, identity, roomId, schedulePeerReconciliation, setKnownParticipants, socket, syncLocalMedia],
   );
 
   useEffect(() => {
@@ -258,15 +372,30 @@ export function useRoomSession(
       toast.error(error.message);
     };
     const handleParticipants = (payload: RoomParticipantsPayload) => {
+      setKnownParticipants(payload.participants);
       dispatch({ type: "participants/set", payload: payload.participants });
+      schedulePeerReconciliation("participants-updated", payload.participants);
     };
     const handleUserJoined = (payload: PresenceUserJoinedPayload) => {
+      const nextParticipants = [
+        ...roomParticipantsRef.current.filter(
+          (participant) => participant.userId !== payload.participant.userId,
+        ),
+        payload.participant,
+      ];
+      setKnownParticipants(nextParticipants);
       dispatch({ type: "participants/upsert", payload: payload.participant });
+      schedulePeerReconciliation("user-joined", nextParticipants);
       toast.success(`${payload.participant.displayName} joined the room.`);
     };
     const handleUserLeft = (payload: PresenceUserLeftPayload) => {
+      const nextParticipants = roomParticipantsRef.current.filter(
+        (participant) => participant.userId !== payload.userId,
+      );
+      setKnownParticipants(nextParticipants);
       rtcSessionRef.current?.removePeer(payload.userId);
       dispatch({ type: "participants/remove", payload: { userId: payload.userId } });
+      schedulePeerReconciliation("user-left", nextParticipants);
       toast.message(`${payload.displayName} left the room.`);
     };
     const handleChatMessage = (payload: ChatNewMessagePayload) => {
@@ -277,7 +406,35 @@ export function useRoomSession(
         return;
       }
 
-      await rtcSessionRef.current?.createOffer(payload.user.userId);
+      const rtcSession = rtcSessionRef.current;
+      if (!rtcSession) {
+        return;
+      }
+
+      const isKnownParticipant = roomParticipantsRef.current.some(
+        (participant) => participant.userId === payload.user.userId,
+      );
+      const existingConnectionState = rtcSession.getConnectionState(payload.user.userId);
+      const hasPeerConnection = rtcSession.hasPeerConnection(payload.user.userId);
+
+      logRtcEvent("peer-ready-received", {
+        roomId: payload.roomId,
+        selfUserId: identity.userId,
+        remoteUserId: payload.user.userId,
+        isKnownParticipant,
+      });
+
+      if (
+        isKnownParticipant &&
+        shouldInitiateOffer(identity.userId, payload.user.userId) &&
+        (!hasPeerConnection ||
+          existingConnectionState === "disconnected" ||
+          existingConnectionState === "new")
+      ) {
+        await rtcSession.createOffer(payload.user.userId);
+      }
+
+      schedulePeerReconciliation("peer-ready-received");
     };
     const handleOffer = (payload: RtcOfferPayload) => {
       if (payload.toUserId !== identity.userId) {
@@ -312,6 +469,14 @@ export function useRoomSession(
           connectionState: payload.state,
         },
       });
+
+      if (payload.state === "connected") {
+        lastBootstrapAttemptRef.current.delete(payload.fromUserId);
+      }
+
+      if (payload.state === "failed" || payload.state === "closed" || payload.state === "disconnected") {
+        schedulePeerReconciliation("remote-connection-state");
+      }
     };
 
     socket.on("connect", handleSocketConnect);
@@ -401,8 +566,21 @@ export function useRoomSession(
 
     void bootstrapRoom();
 
+    const periodicReconcileId = window.setInterval(() => {
+      if (!socket.connected || !hasJoinedRoomRef.current || hasLeftRoomRef.current) {
+        return;
+      }
+
+      void reconcilePeers("periodic-recovery");
+    }, PERIODIC_RECONCILE_MS);
+
     return () => {
       disposedRef.current = true;
+      if (reconcileTimeoutRef.current !== null) {
+        window.clearTimeout(reconcileTimeoutRef.current);
+        reconcileTimeoutRef.current = null;
+      }
+      window.clearInterval(periodicReconcileId);
       socket.off("connect", handleSocketConnect);
       socket.off("disconnect", handleSocketDisconnect);
       socket.off(SOCKET_EVENTS.ROOM.ERROR, handleRoomError);
@@ -428,7 +606,10 @@ export function useRoomSession(
     identity,
     initialMedia,
     joinActiveRoom,
+    reconcilePeers,
     roomId,
+    schedulePeerReconciliation,
+    setKnownParticipants,
     socket,
     syncLocalMedia,
   ]);

@@ -1,12 +1,14 @@
 "use client";
 
 import type {
+  PeerConnectionState,
   RtcAnswerPayload,
   RtcIceCandidatePayload,
   RtcOfferPayload,
 } from "@streamify/shared";
 
 import type { RtcSessionAdapter, RtcSessionAdapterOptions } from "../types";
+import { logRtcEvent } from "../utils/rtc-logger";
 import {
   fromIceCandidateValue,
   fromSessionDescriptionValue,
@@ -62,6 +64,12 @@ export class MeshPeerClient implements RtcSessionAdapter {
   }
 
   async handleAnswer(payload: RtcAnswerPayload) {
+    logRtcEvent("answer-received", {
+      roomId: payload.roomId,
+      fromUserId: payload.fromUserId,
+      toUserId: payload.toUserId,
+    });
+
     const peer = this.ensurePeer(payload.fromUserId);
     await peer.setRemoteDescription(fromSessionDescriptionValue(payload.description));
     await this.flushPendingCandidates(payload.fromUserId);
@@ -69,6 +77,12 @@ export class MeshPeerClient implements RtcSessionAdapter {
   }
 
   async handleIceCandidate(payload: RtcIceCandidatePayload) {
+    logRtcEvent("ice-candidate-received", {
+      roomId: payload.roomId,
+      fromUserId: payload.fromUserId,
+      toUserId: payload.toUserId,
+    });
+
     const peer = this.ensurePeer(payload.fromUserId);
     const candidate = fromIceCandidateValue(payload.candidate);
 
@@ -80,6 +94,19 @@ export class MeshPeerClient implements RtcSessionAdapter {
     }
 
     await peer.addIceCandidate(candidate);
+  }
+
+  hasPeerConnection(userId: string) {
+    return this.peers.has(userId);
+  }
+
+  listPeerUserIds() {
+    return Array.from(this.peers.keys());
+  }
+
+  getConnectionState(userId: string): PeerConnectionState | null {
+    const peer = this.peers.get(userId);
+    return peer?.connectionState ?? null;
   }
 
   updateLocalStream(stream: MediaStream | null) {
@@ -98,8 +125,11 @@ export class MeshPeerClient implements RtcSessionAdapter {
   removePeer(userId: string) {
     const peer = this.peers.get(userId);
     if (peer) {
-      peer.close();
       this.peers.delete(userId);
+      peer.onicecandidate = null;
+      peer.ontrack = null;
+      peer.onconnectionstatechange = null;
+      peer.close();
     }
 
     const remoteStream = this.remoteStreams.get(userId);
@@ -162,9 +192,22 @@ export class MeshPeerClient implements RtcSessionAdapter {
     };
 
     peer.onconnectionstatechange = () => {
-      this.options.onConnectionStateChange(userId, peer.connectionState);
-      if (peer.connectionState === "failed" || peer.connectionState === "closed") {
-        this.options.onRemoteStream(userId, null);
+      const connectionState = peer.connectionState;
+      logRtcEvent("connection-state-changed", {
+        roomId: this.options.roomId,
+        selfUserId: this.options.selfUserId,
+        targetUserId: userId,
+        connectionState,
+      });
+
+      this.options.onConnectionStateChange(userId, connectionState);
+
+      if (connectionState === "failed" || connectionState === "closed") {
+        queueMicrotask(() => {
+          if (this.peers.get(userId) === peer) {
+            this.removePeer(userId);
+          }
+        });
       }
     };
 
@@ -236,6 +279,12 @@ export class MeshPeerClient implements RtcSessionAdapter {
           continue;
         }
 
+        logRtcEvent("offer-created", {
+          roomId: this.options.roomId,
+          fromUserId: this.options.selfUserId,
+          toUserId: userId,
+        });
+
         this.options.onSignalOffer({
           roomId: this.options.roomId,
           fromUserId: this.options.selfUserId,
@@ -244,6 +293,12 @@ export class MeshPeerClient implements RtcSessionAdapter {
             type: peer.localDescription.type,
             sdp: peer.localDescription.sdp ?? undefined,
           }),
+        });
+
+        logRtcEvent("offer-sent", {
+          roomId: this.options.roomId,
+          fromUserId: this.options.selfUserId,
+          toUserId: userId,
         });
       }
     })().finally(() => {

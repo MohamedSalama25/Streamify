@@ -30,6 +30,9 @@ export interface RtcSessionAdapter {
   handleOffer(payload: RtcOfferPayload): Promise<void>;
   handleAnswer(payload: RtcAnswerPayload): Promise<void>;
   handleIceCandidate(payload: RtcIceCandidatePayload): Promise<void>;
+  hasPeerConnection(userId: string): boolean;
+  listPeerUserIds(): string[];
+  getConnectionState(userId: string): PeerConnectionState | null;
   updateLocalStream(stream: MediaStream | null): void;
   removePeer(userId: string): void;
   destroy(): void;
