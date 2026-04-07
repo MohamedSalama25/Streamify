@@ -170,9 +170,8 @@ export function HomeHero() {
         </div>
 
         {/* ── Bottom Section — Designed for Focus ── */}
-        <section className="mt-20 lg:mt-28">
+        {/* <section className="mt-20 lg:mt-28">
           <div className="grid gap-8 lg:grid-cols-2 items-center">
-            {/* Preview */}
             <div className="relative rounded-3xl ghost-border overflow-hidden bg-surface-container-lowest aspect-video flex items-center justify-center">
               <div className="text-center space-y-3">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-container-high">
@@ -183,8 +182,6 @@ export function HomeHero() {
                 </p>
               </div>
             </div>
-
-            {/* Focus Description */}
             <div className="space-y-5">
               <h2 className="text-headline-lg font-bold text-on-surface">
                 {t.focus.title}
@@ -194,7 +191,7 @@ export function HomeHero() {
               </p>
             </div>
           </div>
-        </section>
+        </section> */}
       </div>
     </div>
   );
