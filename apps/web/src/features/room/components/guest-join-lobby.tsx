@@ -4,6 +4,8 @@ import React, { useEffect, useState, useCallback, type FormEvent } from "react";
 import { Mic, Video as VideoIcon, MonitorUp, MicOff, VideoOff, MonitorOff, ArrowRight, ShieldCheck, EyeOff, User } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 
+import { PageBackground } from "@/features/layout/components/page-background";
+
 interface GuestJoinLobbyProps {
     roomId: string;
     initialDisplayName?: string;
@@ -77,7 +79,8 @@ export function GuestJoinLobby({ roomId, initialDisplayName = "", onJoin }: Gues
     );
 
     return (
-        <div className="min-h-screen w-full bg-[#0f131e] text-[#dfe2f2] font-body overflow-hidden flex flex-col xl:flex-row shadow-[inset_0_0_150px_rgba(0,0,0,0.5)]">
+        <div className="relative min-h-screen w-full text-on-surface font-body overflow-hidden flex flex-col xl:flex-row">
+            <PageBackground imageUrl="/images/app-background.png" />
 
 
             {/* Main Stage */}

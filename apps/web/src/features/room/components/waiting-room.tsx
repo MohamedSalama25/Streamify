@@ -3,6 +3,8 @@
 import { ArrowLeft, ShieldCheck, XCircle } from "lucide-react";
 import { useI18n } from "@/shared/i18n";
 
+import { PageBackground } from "@/features/layout/components/page-background";
+
 export type WaitingRoomStatus = "waiting" | "rejected";
 
 interface WaitingRoomProps {
@@ -16,7 +18,8 @@ export function WaitingRoom({ roomId, displayName, status, onBack }: WaitingRoom
     const { t } = useI18n();
 
     return (
-        <div className="fixed inset-0 bg-surface-container-lowest font-body text-on-surface flex items-center justify-center overflow-hidden">
+        <div className="fixed inset-0 font-body text-on-surface flex items-center justify-center overflow-hidden">
+            <PageBackground imageUrl="/images/app-background.png" />
             {/* ── Animated Background ── */}
             <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
                 <div className="absolute top-1/4 left-1/4 w-[800px] h-[800px] bg-primary/20 rounded-full blur-[160px] opacity-20 animate-pulse" />

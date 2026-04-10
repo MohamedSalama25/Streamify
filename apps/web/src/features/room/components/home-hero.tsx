@@ -49,7 +49,7 @@ export function HomeHero() {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      <PageBackground imageUrl="https://lh3.googleusercontent.com/aida-public/AB6AXuCEFX8-PekjQB9w8ytQENtxWp_9Srnq05pKITWI_25PklnewCczrGS4rg7hkk97pyMGwHp2T9zYojrh4nZK2_ItHkMbbdp-EhUOV0MxdR1mouEJJONs1Q4LO-vd3lEnNv9xxEbxxm_xKrgwexspSfU9gXVmHYhcLF1be2kfS4e5qLB_f-ic8YPm9IlYAKYsoMPEiqStPnOh_T6tAjPjyPUMapFujhY0OW0pL-5hGZbD9ViYrqb9ZGrBUPbItNJM-G5q8Ye6v7981zI" />
+      <PageBackground imageUrl="/images/app-background.png" />
 
       {/* ── Top Navigation ── */}
       <TopNav />
@@ -170,17 +170,15 @@ export function HomeHero() {
         </div>
 
         {/* ── Bottom Section — Designed for Focus ── */}
-        {/* <section className="mt-20 lg:mt-28">
+        <section className="mt-20 lg:mt-28">
           <div className="grid gap-8 lg:grid-cols-2 items-center">
-            <div className="relative rounded-3xl ghost-border overflow-hidden bg-surface-container-lowest aspect-video flex items-center justify-center">
-              <div className="text-center space-y-3">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-container-high">
-                  <Monitor className="h-7 w-7 text-on-surface-variant" />
-                </div>
-                <p className="text-label-md uppercase tracking-widest text-muted-foreground">
-                  {t.session.noSignal}
-                </p>
-              </div>
+            <div className="relative rounded-3xl ghost-border overflow-hidden bg-surface-container-lowest aspect-video group">
+              <img
+                src="/images/focus-feature.png"
+                alt={t.focus.title}
+                className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
+              />
+              <div className="absolute inset-0 bg-gradient-to-tr from-surface-container-lowest/40 via-transparent to-primary/5" />
             </div>
             <div className="space-y-5">
               <h2 className="text-headline-lg font-bold text-on-surface">
@@ -191,7 +189,7 @@ export function HomeHero() {
               </p>
             </div>
           </div>
-        </section> */}
+        </section>
       </div>
     </div>
   );
