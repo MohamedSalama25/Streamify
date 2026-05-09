@@ -19,7 +19,24 @@ function wait(ms: number) {
   });
 }
 
+function assertSocketUrlCompatible() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const pageProtocol = window.location.protocol;
+  const socketUrl = clientEnv.NEXT_PUBLIC_SOCKET_URL;
+
+  // Browsers block mixed-content requests: an https page cannot call an http API.
+  if (pageProtocol === "https:" && socketUrl.startsWith("http://")) {
+    throw new Error(
+      "Invalid NEXT_PUBLIC_SOCKET_URL for HTTPS deployment. Use an https:// (or wss://) signaling server URL.",
+    );
+  }
+}
+
 async function pingSignalingHealth() {
+  assertSocketUrlCompatible();
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), SIGNALING_HEALTH_TIMEOUT_MS);
 
@@ -70,6 +87,7 @@ export async function ensureSignalingServerReady() {
 
 export function getSocket() {
   if (!socket) {
+    assertSocketUrlCompatible();
     socket = io(clientEnv.NEXT_PUBLIC_SOCKET_URL, {
       autoConnect: false,
       transports: ["polling", "websocket"],

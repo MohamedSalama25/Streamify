@@ -61,6 +61,15 @@ pnpm typecheck
 pnpm lint
 ```
 
+## 🌍 Deployment Notes (Vercel / Prod)
+
+If the web app is deployed on HTTPS (e.g. Vercel), make sure:
+
+- `apps/web` has `NEXT_PUBLIC_SOCKET_URL` set to your **public** signaling server URL (must be `https://...`).
+- `apps/server` has `CLIENT_URL` set to your deployed web URL (so CORS + Socket.IO allow it).
+
+If either is wrong, `/health` and Socket.IO will fail in production even if local works.
+
 ## 🔊 Fixing “No Audio Across Different Networks” (TURN)
 
 WebRTC **STUN-only** works on many networks, but can fail behind symmetric NATs / restrictive firewalls (common with mobile hotspots, enterprise Wi‑Fi, some ISPs). For **reliable audio/video between different networks**, configure a **TURN** server (e.g. coturn) and set these in `apps/server/.env`:
