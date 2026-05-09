@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { logger } from "./common/logger/logger";
 import type { AppSocketServer } from "./common/types/socket";
 import { env } from "./config/env";
+import { createCorsOriginValidator } from "./config/cors";
 import { createApp } from "./app";
 import { ChatService } from "./features/chat/services/chat-service";
 import { RoomService } from "./features/rooms/services/room-service";
@@ -30,7 +31,7 @@ const app = createApp(rtcConfigService, roomService);
 const httpServer = createServer(app);
 const io: AppSocketServer = new Server(httpServer, {
   cors: {
-    origin: env.CLIENT_URL,
+    origin: createCorsOriginValidator(),
     credentials: true,
   },
 });

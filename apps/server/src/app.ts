@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 
 import { env } from "./config/env";
+import { createCorsOriginValidator } from "./config/cors";
 import { healthController } from "./features/health/health.controller";
 import { createRtcConfigController } from "./features/rtc/controllers/rtc-config.controller";
 import { createRoomController } from "./features/rooms/controllers/room.controller.js";
@@ -13,7 +14,7 @@ export function createApp(rtcConfigService: RtcConfigService, roomService: RoomS
 
   app.use(
     cors({
-      origin: env.CLIENT_URL,
+      origin: createCorsOriginValidator(),
       credentials: true,
     }),
   );
@@ -25,4 +26,3 @@ export function createApp(rtcConfigService: RtcConfigService, roomService: RoomS
 
   return app;
 }
-
