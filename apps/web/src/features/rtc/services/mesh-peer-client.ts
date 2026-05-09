@@ -154,6 +154,7 @@ export class MeshPeerClient implements RtcSessionAdapter {
 
     const peer = new RTCPeerConnection({
       iceServers: this.options.iceServers,
+      iceTransportPolicy: this.options.iceTransportPolicy,
     });
 
     peer.onicecandidate = (event) => {

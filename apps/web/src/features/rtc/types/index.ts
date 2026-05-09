@@ -17,6 +17,7 @@ export interface RtcSessionAdapterOptions {
   roomId: string;
   selfUserId: string;
   iceServers: RTCIceServer[];
+  iceTransportPolicy?: RTCIceTransportPolicy;
   localStream: MediaStream | null;
   onRemoteStream: (userId: string, stream: MediaStream | null) => void;
   onConnectionStateChange: (userId: string, state: PeerConnectionState) => void;

@@ -211,6 +211,8 @@ export interface IceServerConfig {
 
 export interface RtcConfigurationResponse {
   iceServers: IceServerConfig[];
+  iceTransportPolicy?: "all" | "relay";
+  warnings?: string[];
 }
 
 export interface ClientToServerEvents {

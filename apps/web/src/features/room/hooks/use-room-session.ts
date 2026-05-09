@@ -79,6 +79,8 @@ export function useRoomSession(
   const joinInFlightRef = useRef<Promise<void> | null>(null);
   const disposedRef = useRef(false);
   const rtcIceServersRef = useRef<RTCIceServer[] | null>(null);
+  const rtcIceTransportPolicyRef = useRef<RTCIceTransportPolicy | undefined>(undefined);
+  const rtcConfigWarningsShownRef = useRef(false);
   const initialMediaAppliedRef = useRef(false);
   const lastRoomErrorRef = useRef<RoomErrorPayload | null>(null);
   const roomParticipantsRef = useRef<RoomParticipant[]>([]);
@@ -218,12 +220,17 @@ export function useRoomSession(
   );
 
   const createRtcSession = useCallback(
-    (iceServers: RTCIceServer[], localStream: MediaStream | null) => {
+    (
+      iceServers: RTCIceServer[],
+      localStream: MediaStream | null,
+      iceTransportPolicy?: RTCIceTransportPolicy,
+    ) => {
       rtcSessionRef.current?.destroy();
       rtcSessionRef.current = createRtcSessionAdapter({
         roomId,
         selfUserId: identity.userId,
         iceServers,
+        iceTransportPolicy,
         localStream,
         onRemoteStream: (userId, stream) => {
           dispatch({
@@ -282,6 +289,7 @@ export function useRoomSession(
           createRtcSession(
             rtcIceServersRef.current ?? [],
             mediaManager.getOutgoingStream(),
+            rtcIceTransportPolicyRef.current,
           );
         }
 
@@ -504,6 +512,12 @@ export function useRoomSession(
         }
 
         rtcIceServersRef.current = rtcConfig.iceServers as RTCIceServer[];
+        rtcIceTransportPolicyRef.current = rtcConfig.iceTransportPolicy;
+
+        if (!rtcConfigWarningsShownRef.current && rtcConfig.warnings?.length) {
+          rtcConfigWarningsShownRef.current = true;
+          rtcConfig.warnings.forEach((warning) => toast.warning(warning));
+        }
 
         if (mediaBootstrap.error) {
           dispatch({ type: "session/set-media-error", payload: mediaBootstrap.error });
@@ -537,6 +551,7 @@ export function useRoomSession(
         createRtcSession(
           rtcIceServersRef.current,
           mediaManager.getOutgoingStream(),
+          rtcIceTransportPolicyRef.current,
         );
 
         mediaManager.onScreenShareEnded = () => {

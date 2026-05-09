@@ -1,0 +1,23 @@
+services:
+  turn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - "-n"
+      - "--log-file=stdout"
+      - "--min-port=49160"
+      - "--max-port=49200"
+      - "--lt-cred-mech"
+      - "--fingerprint"
+      - "--realm=${TURN_REALM:-streamify}"
+      - "--user=${TURN_USERNAME:-streamify}:${TURN_CREDENTIAL:-streamify}"
+      - "--external-ip=${TURN_EXTERNAL_IP}"
+      - "--listening-ip=0.0.0.0"
+      - "--listening-port=${TURN_PORT:-3478}"
+      - "--no-multicast-peers"
+      - "--no-cli"
+      - "--no-tlsv1"
+      - "--no-tlsv1_1"
+    environment:
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:?Set TURN_EXTERNAL_IP to your public IP (or publicIP/privateIP for NAT)}

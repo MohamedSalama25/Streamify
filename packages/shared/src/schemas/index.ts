@@ -136,4 +136,6 @@ export const iceServerConfigSchema = z.object({
 
 export const rtcConfigurationResponseSchema = z.object({
   iceServers: z.array(iceServerConfigSchema),
+  iceTransportPolicy: z.enum(["all", "relay"]).optional(),
+  warnings: z.array(z.string().min(1)).optional(),
 });

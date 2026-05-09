@@ -61,6 +61,29 @@ pnpm typecheck
 pnpm lint
 ```
 
+## 🔊 Fixing “No Audio Across Different Networks” (TURN)
+
+WebRTC **STUN-only** works on many networks, but can fail behind symmetric NATs / restrictive firewalls (common with mobile hotspots, enterprise Wi‑Fi, some ISPs). For **reliable audio/video between different networks**, configure a **TURN** server (e.g. coturn) and set these in `apps/server/.env`:
+
+- `RTC_TURN_URLS` (comma-separated, include UDP + TCP, and optionally TLS)
+- `RTC_TURN_USERNAME`
+- `RTC_TURN_CREDENTIAL`
+- (optional) `RTC_ICE_TRANSPORT_POLICY=relay` to force TURN-only in restrictive environments
+
+This repo includes a minimal coturn compose file:
+
+```bash
+TURN_EXTERNAL_IP=<your_public_ip> TURN_USERNAME=streamify TURN_CREDENTIAL=streamify docker compose -f docker-compose.turn.yml up -d
+```
+
+Then set (example):
+
+```bash
+RTC_TURN_URLS=turn:<your_public_ip>:3478?transport=udp,turn:<your_public_ip>:3478?transport=tcp
+RTC_TURN_USERNAME=streamify
+RTC_TURN_CREDENTIAL=streamify
+```
+
 ## ⚠️ Current Limitations (WebRTC Mesh)
 - **Scale**: Limited to **4 participants** per room due to P2P Mesh architecture.
 - **Persistence**: Rooms and chats are ephemeral (no database integration yet).
