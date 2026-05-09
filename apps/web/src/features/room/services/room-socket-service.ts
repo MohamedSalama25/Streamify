@@ -16,7 +16,7 @@ import {
   type SocketAck,
 } from "@streamify/shared";
 
-import { ensureSignalingServerReady, type StreamifySocket } from "@/shared/lib/socket";
+import type { StreamifySocket } from "@/shared/lib/socket";
 
 const SOCKET_CONNECT_TIMEOUT_MS = 25_000;
 const SOCKET_ACK_TIMEOUT_MS = 15_000;
@@ -42,8 +42,6 @@ async function connectSocket(socket: StreamifySocket) {
 
   if (!pendingConnectPromise) {
     pendingConnectPromise = (async () => {
-      await ensureSignalingServerReady();
-
       await new Promise<void>((resolve, reject) => {
         const timeoutId = window.setTimeout(() => {
           cleanup();
