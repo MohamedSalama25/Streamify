@@ -32,7 +32,6 @@ export function createCorsOriginValidator() {
       return;
     }
 
-    callback(new Error(`CORS origin denied: ${origin}`));
+    callback(null, false);
   };
 }
-
